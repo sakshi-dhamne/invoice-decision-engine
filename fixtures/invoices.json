@@ -1,0 +1,786 @@
+[
+  {
+    "invoice_number": "INV-ACM-5501",
+    "vendor_name_as_printed": "Acme Technologies Pvt Ltd",
+    "vendor_id": "V001",
+    "po_reference": "PO-2001",
+    "invoice_date": "2026-09-01",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Enterprise Software License - Annual Subscription",
+        "quantity": 1,
+        "unit_price": 100000,
+        "amount": 100000
+      }
+    ],
+    "subtotal": 100000,
+    "tax": 18000,
+    "total": 118000,
+    "bank_account_printed": "50100234567891",
+    "remit_to_name": "Acme Technologies Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Clean invoice, exact PO match, well under auto-approve limit.",
+    "pdf_filename": "INV-ACM-5501.pdf"
+  },
+  {
+    "invoice_number": "INV-NCS-2150",
+    "vendor_name_as_printed": "Nimbus Cloud Services Private Limited",
+    "vendor_id": "V002",
+    "po_reference": "PO-2003",
+    "invoice_date": "2026-09-02",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Cloud Hosting - Annual Subscription",
+        "quantity": 1,
+        "unit_price": 87500,
+        "amount": 87500
+      }
+    ],
+    "subtotal": 74153,
+    "tax": 13347,
+    "total": 87500,
+    "bank_account_printed": "004701551234",
+    "remit_to_name": "Nimbus Cloud Services Private Limited",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Tax-inclusive invoice, no separate tax row shown; total matches PO exactly.",
+    "pdf_filename": "INV-NCS-2150.pdf"
+  },
+  {
+    "invoice_number": "INV-SOS-7690",
+    "vendor_name_as_printed": "Sterling Office Supplies Pvt. Ltd.",
+    "vendor_id": "V003",
+    "po_reference": "PO-2005",
+    "invoice_date": "2026-09-03",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Office Furniture & Supplies - Bulk Order",
+        "quantity": 1,
+        "unit_price": 123051,
+        "amount": 123051
+      }
+    ],
+    "subtotal": 123051,
+    "tax": 22149,
+    "total": 145200,
+    "bank_account_printed": "911020045678123",
+    "remit_to_name": "Sterling Office Supplies Pvt. Ltd.",
+    "document_type": "invoice",
+    "template": "c",
+    "notes_field": "PO-2005",
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "PO reference appears only in the Notes block (template c convention), otherwise clean exact match.",
+    "pdf_filename": "INV-SOS-7690.pdf"
+  },
+  {
+    "invoice_number": "INV-VLI-3280",
+    "vendor_name_as_printed": "Vertex Logistics India Pvt Ltd",
+    "vendor_id": "V004",
+    "po_reference": "PO-2007",
+    "invoice_date": "2026-09-04",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Freight & Logistics Services - Outbound Shipment Q3",
+        "quantity": 1,
+        "unit_price": 54915,
+        "amount": 54915
+      }
+    ],
+    "subtotal": 54915,
+    "tax": 9885,
+    "total": 64800,
+    "bank_account_printed": "33210100889977",
+    "remit_to_name": "Vertex Logistics India Pvt Ltd",
+    "document_type": "invoice",
+    "template": "d",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Landscape multi-column layout, clean exact PO match.",
+    "pdf_filename": "INV-VLI-3280.pdf"
+  },
+  {
+    "invoice_number": "INV-QCL-1102",
+    "vendor_name_as_printed": "Quantum Consulting LLP",
+    "vendor_id": "V005",
+    "po_reference": "PO-2010",
+    "invoice_date": "2026-09-05",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Consulting Package A - Strategy & Advisory (Bundled Services)",
+        "quantity": 1,
+        "unit_price": 83000,
+        "amount": 83000
+      },
+      {
+        "description": "Consulting Package B - Implementation & Rollout Support (Bundled Services)",
+        "quantity": 1,
+        "unit_price": 62763,
+        "amount": 62763
+      }
+    ],
+    "subtotal": 145763,
+    "tax": 26237,
+    "total": 172000,
+    "bank_account_printed": "50200078451236",
+    "remit_to_name": "Quantum Consulting LLP",
+    "document_type": "invoice",
+    "template": "e",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Bundled/package-style line items, clean exact PO match.",
+    "pdf_filename": "INV-QCL-1102.pdf"
+  },
+  {
+    "invoice_number": "INV-ACM-5510",
+    "vendor_name_as_printed": "Acme Technologies Pvt Ltd",
+    "vendor_id": "V001",
+    "po_reference": "PO-2002",
+    "invoice_date": "2026-09-07",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Server Hardware & Network Equipment - Phase 1 Delivery",
+        "quantity": 1,
+        "unit_price": 288136,
+        "amount": 288136
+      }
+    ],
+    "subtotal": 288136,
+    "tax": 51864,
+    "total": 340000,
+    "bank_account_printed": "50100234567891",
+    "remit_to_name": "Acme Technologies Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": "Partial billing against PO-2002, phase 1 of 2.",
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "Clean partial match well within PO-2002's remaining balance, but total exceeds the auto_approve_limit authority ceiling, so a human must approve regardless of match quality.",
+    "pdf_filename": "INV-ACM-5510.pdf"
+  },
+  {
+    "invoice_number": "INV-ACM-5521",
+    "vendor_name_as_printed": "Acme Technologies Pvt Ltd",
+    "vendor_id": "V001",
+    "po_reference": "PO-2002",
+    "invoice_date": "2026-09-08",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Server Hardware & Network Equipment - Phase 2 Delivery",
+        "quantity": 1,
+        "unit_price": 383051,
+        "amount": 383051
+      }
+    ],
+    "subtotal": 383051,
+    "tax": 68949,
+    "total": 452000,
+    "bank_account_printed": "50100999888777",
+    "remit_to_name": "Acme Technologies Pvt Ltd",
+    "vendor_email_override": "billing@acme-technologies.com",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": "Partial billing against PO-2002, phase 2 of 2.",
+    "parent_invoice_number": null,
+    "expected_verdict": "BLOCK",
+    "case_description": "Printed bank account (50100999888777) does not match V001's master bank account, and the footer email domain (acme-technologies.com, hyphenated) differs from the vendor's real domain (acmetechnologies.com) — classic payment-redirection fraud signal.",
+    "pdf_filename": "INV-ACM-5521.pdf"
+  },
+  {
+    "invoice_number": "INV-HSL-8890",
+    "vendor_name_as_printed": "Helix Software Labs Pvt Ltd",
+    "vendor_id": "V008",
+    "po_reference": "PO-2019",
+    "invoice_date": "2026-09-08",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Custom Software Development - Module Build",
+        "quantity": 1,
+        "unit_price": 191525,
+        "amount": 191525
+      }
+    ],
+    "subtotal": 191525,
+    "tax": 34475,
+    "total": 226000,
+    "bank_account_printed": "12340100556677",
+    "remit_to_name": "Helix Global FZE, Dubai",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "BLOCK",
+    "case_description": "Vendor block still names Helix Software Labs Pvt Ltd, but the remit-to line names a different legal entity (Helix Global FZE, Dubai) — funds would route offshore to an unrelated entity.",
+    "pdf_filename": "INV-HSL-8890.pdf"
+  },
+  {
+    "invoice_number": "INV-SOS-7714",
+    "vendor_name_as_printed": "Sterling Office Supplies Pvt. Ltd.",
+    "vendor_id": "V003",
+    "po_reference": null,
+    "invoice_date": "2026-09-09",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Office Stationery & Printer Supplies - Bulk Order",
+        "quantity": 1,
+        "unit_price": 156356,
+        "amount": 156356
+      }
+    ],
+    "subtotal": 156356,
+    "tax": 28144,
+    "total": 184500,
+    "bank_account_printed": "911020045678123",
+    "remit_to_name": "Sterling Office Supplies Pvt. Ltd.",
+    "document_type": "invoice",
+    "template": "c",
+    "notes_field": "Please process payment within 30 days of receipt.",
+    "parent_invoice_number": null,
+    "expected_verdict": "HOLD",
+    "pdf_filename": "INV-SOS-7714.pdf",
+    "case_description": "No PO reference anywhere in the document, so the invoice cannot be matched automatically."
+  },
+  {
+    "invoice_number": "INV-SOS-7714",
+    "vendor_name_as_printed": "Sterling Office Supplies Pvt. Ltd.",
+    "vendor_id": "V003",
+    "po_reference": "PO-2012",
+    "invoice_date": "2026-09-11",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Office Stationery & Printer Supplies - Bulk Order",
+        "quantity": 1,
+        "unit_price": 156356,
+        "amount": 156356
+      }
+    ],
+    "subtotal": 156356,
+    "tax": 28144,
+    "total": 184500,
+    "bank_account_printed": "911020045678123",
+    "remit_to_name": "Sterling Office Supplies Pvt. Ltd.",
+    "document_type": "invoice",
+    "template": "c",
+    "notes_field": "PO-2012. Please process payment within 30 days of receipt.",
+    "parent_invoice_number": "INV-SOS-7714",
+    "expected_verdict": "AUTO_APPROVE",
+    "pdf_filename": "INV-SOS-7714-resubmit.pdf",
+    "case_description": "Resubmission of the earlier HOLD invoice, identical in every respect except the PO reference is now present in the notes block."
+  },
+  {
+    "invoice_number": "INV-VLI-3302",
+    "vendor_name_as_printed": "Vertex Logistics India Pvt Ltd",
+    "vendor_id": "V004",
+    "po_reference": null,
+    "invoice_date": "2026-09-09",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Warehousing & Distribution Services - Q3",
+        "quantity": 1,
+        "unit_price": 140678,
+        "amount": 140678
+      }
+    ],
+    "subtotal": 140678,
+    "tax": 25322,
+    "total": 166000,
+    "bank_account_printed": "33210100889977",
+    "remit_to_name": "Vertex Logistics India Pvt Ltd",
+    "document_type": "invoice",
+    "template": "d",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "HOLD",
+    "pdf_filename": "INV-VLI-3302.pdf",
+    "case_description": "No PO reference anywhere in the document, so the invoice cannot be matched automatically."
+  },
+  {
+    "invoice_number": "INV-VLI-3302",
+    "vendor_name_as_printed": "Vertex Logistics India Pvt Ltd",
+    "vendor_id": "V004",
+    "po_reference": "PO-2014",
+    "invoice_date": "2026-09-11",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Warehousing & Distribution Services - Q3",
+        "quantity": 1,
+        "unit_price": 140678,
+        "amount": 140678
+      },
+      {
+        "description": "Additional Handling Surcharge",
+        "quantity": 1,
+        "unit_price": 8475,
+        "amount": 8475
+      }
+    ],
+    "subtotal": 149153,
+    "tax": 26847,
+    "total": 176000,
+    "bank_account_printed": "33210100889977",
+    "remit_to_name": "Vertex Logistics India Pvt Ltd",
+    "document_type": "invoice",
+    "template": "d",
+    "notes_field": null,
+    "parent_invoice_number": "INV-VLI-3302",
+    "expected_verdict": "BLOCK",
+    "pdf_filename": "INV-VLI-3302-resubmit.pdf",
+    "case_description": "Resubmission adds a PO reference but also raises the total by 10,000 versus the original submission — an unexplained amount increase on a resubmitted document."
+  },
+  {
+    "invoice_number": "INV-BIT-441",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2031",
+    "invoice_date": "2026-09-02",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Industrial Tooling Equipment - Bulk Order",
+        "quantity": 1,
+        "unit_price": 165254,
+        "amount": 165254
+      }
+    ],
+    "subtotal": 165254,
+    "tax": 29746,
+    "total": 195000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "One of five identical invoices (same amount, no milestone reference) submitted against PO-2031 within an 8-day span — a split-invoicing pattern flagged for human review even though each invoice individually is below the auto-approve limit.",
+    "pdf_filename": "INV-BIT-441.pdf"
+  },
+  {
+    "invoice_number": "INV-BIT-442",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2031",
+    "invoice_date": "2026-09-04",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Industrial Tooling Equipment - Bulk Order",
+        "quantity": 1,
+        "unit_price": 165254,
+        "amount": 165254
+      }
+    ],
+    "subtotal": 165254,
+    "tax": 29746,
+    "total": 195000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "One of five identical invoices (same amount, no milestone reference) submitted against PO-2031 within an 8-day span — a split-invoicing pattern flagged for human review even though each invoice individually is below the auto-approve limit.",
+    "pdf_filename": "INV-BIT-442.pdf"
+  },
+  {
+    "invoice_number": "INV-BIT-443",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2031",
+    "invoice_date": "2026-09-06",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Industrial Tooling Equipment - Bulk Order",
+        "quantity": 1,
+        "unit_price": 165254,
+        "amount": 165254
+      }
+    ],
+    "subtotal": 165254,
+    "tax": 29746,
+    "total": 195000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "One of five identical invoices (same amount, no milestone reference) submitted against PO-2031 within an 8-day span — a split-invoicing pattern flagged for human review even though each invoice individually is below the auto-approve limit.",
+    "pdf_filename": "INV-BIT-443.pdf"
+  },
+  {
+    "invoice_number": "INV-BIT-444",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2031",
+    "invoice_date": "2026-09-08",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Industrial Tooling Equipment - Bulk Order",
+        "quantity": 1,
+        "unit_price": 165254,
+        "amount": 165254
+      }
+    ],
+    "subtotal": 165254,
+    "tax": 29746,
+    "total": 195000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "One of five identical invoices (same amount, no milestone reference) submitted against PO-2031 within an 8-day span — a split-invoicing pattern flagged for human review even though each invoice individually is below the auto-approve limit.",
+    "pdf_filename": "INV-BIT-444.pdf"
+  },
+  {
+    "invoice_number": "INV-BIT-445",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2031",
+    "invoice_date": "2026-09-09",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Industrial Tooling Equipment - Bulk Order",
+        "quantity": 1,
+        "unit_price": 165254,
+        "amount": 165254
+      }
+    ],
+    "subtotal": 165254,
+    "tax": 29746,
+    "total": 195000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "One of five identical invoices (same amount, no milestone reference) submitted against PO-2031 within an 8-day span — a split-invoicing pattern flagged for human review even though each invoice individually is below the auto-approve limit.",
+    "pdf_filename": "INV-BIT-445.pdf"
+  },
+  {
+    "invoice_number": "INV-NCS-2201",
+    "vendor_name_as_printed": "Nimbus Cloud Services Private Limited",
+    "vendor_id": "V002",
+    "po_reference": "PO-2044",
+    "invoice_date": "2026-08-06",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Environment Setup & Migration (Milestone 1)",
+        "quantity": 1,
+        "unit_price": 120593,
+        "amount": 120593
+      }
+    ],
+    "subtotal": 120593,
+    "tax": 21707,
+    "total": 142300,
+    "bank_account_printed": "004701551234",
+    "remit_to_name": "Nimbus Cloud Services Private Limited",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": "Against Milestone 1 — Environment setup & migration",
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Milestone billing against PO-2044's delivery schedule; amount matches the named milestone exactly.",
+    "pdf_filename": "INV-NCS-2201.pdf"
+  },
+  {
+    "invoice_number": "INV-NCS-2218",
+    "vendor_name_as_printed": "Nimbus Cloud Services Private Limited",
+    "vendor_id": "V002",
+    "po_reference": "PO-2044",
+    "invoice_date": "2026-08-27",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Data Pipeline Build (Milestone 2)",
+        "quantity": 1,
+        "unit_price": 160085,
+        "amount": 160085
+      }
+    ],
+    "subtotal": 160085,
+    "tax": 28815,
+    "total": 188900,
+    "bank_account_printed": "004701551234",
+    "remit_to_name": "Nimbus Cloud Services Private Limited",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": "Against Milestone 2 — Data pipeline build",
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Milestone billing against PO-2044's delivery schedule; amount matches the named milestone exactly.",
+    "pdf_filename": "INV-NCS-2218.pdf"
+  },
+  {
+    "invoice_number": "INV-NCS-2237",
+    "vendor_name_as_printed": "Nimbus Cloud Services Private Limited",
+    "vendor_id": "V002",
+    "po_reference": "PO-2044",
+    "invoice_date": "2026-09-16",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Handover & Training (Milestone 3)",
+        "quantity": 1,
+        "unit_price": 126102,
+        "amount": 126102
+      }
+    ],
+    "subtotal": 126102,
+    "tax": 22698,
+    "total": 148800,
+    "bank_account_printed": "004701551234",
+    "remit_to_name": "Nimbus Cloud Services Private Limited",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": "Against Milestone 3 — Handover & training",
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Milestone billing against PO-2044's delivery schedule; amount matches the named milestone exactly.",
+    "pdf_filename": "INV-NCS-2237.pdf"
+  },
+  {
+    "invoice_number": "INV-QCL-1130",
+    "vendor_name_as_printed": "Quantum Consulting LLP",
+    "vendor_id": "V005",
+    "po_reference": "PO-2010",
+    "invoice_date": "2026-09-10",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Consulting Package C - Support Retainer (Bundled Services)",
+        "quantity": 1,
+        "unit_price": 52000,
+        "amount": 52000
+      },
+      {
+        "description": "Consulting Package D - Add-on Services (Bundled Services)",
+        "quantity": 1,
+        "unit_price": 10000,
+        "amount": 10000
+      }
+    ],
+    "subtotal": 62000,
+    "tax": 11160,
+    "total": 66000,
+    "bank_account_printed": "50200078451236",
+    "remit_to_name": "Quantum Consulting LLP",
+    "document_type": "invoice",
+    "template": "e",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "HOLD",
+    "scanned": true,
+    "case_description": "Submitted as a scanned phone photo (rotated, noisy, JPEG-compressed, low contrast). Line items plus tax (73160) do not equal the stated total (66000) as printed on the document — the total field is genuinely hard to read with confidence in the scan, which is the point of the case.",
+    "pdf_filename": "INV-QCL-1130.pdf"
+  },
+  {
+    "invoice_number": "INV-ZTR-0001",
+    "vendor_name_as_printed": "Zenith Traders Pvt Ltd",
+    "vendor_id": null,
+    "po_reference": null,
+    "invoice_date": "2026-09-10",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "General Trading Supplies",
+        "quantity": 1,
+        "unit_price": 77966,
+        "amount": 77966
+      }
+    ],
+    "subtotal": 77966,
+    "tax": 14034,
+    "total": 92000,
+    "bank_account_printed": "60123456789012",
+    "remit_to_name": "Zenith Traders Pvt Ltd",
+    "vendor_address_override": {
+      "line1": "14 Industrial Area, Phase 1",
+      "city": "Faridabad",
+      "state": "Haryana",
+      "pincode": "121003"
+    },
+    "vendor_gstin_override": "06AAZZZ0000P1Z1",
+    "vendor_email_override": "accounts@zenithtraders.co.in",
+    "document_type": "invoice",
+    "template": "c",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "HOLD",
+    "case_description": "Printed vendor \"Zenith Traders Pvt Ltd\" does not exist in the vendor master — no vendor_id, no PO reference, cannot be matched.",
+    "pdf_filename": "INV-ZTR-0001.pdf"
+  },
+  {
+    "invoice_number": "INV-BIT-460",
+    "vendor_name_as_printed": "Bharat Industrial Tools Pvt Ltd",
+    "vendor_id": "V006",
+    "po_reference": "PO-2033",
+    "invoice_date": "2026-09-12",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Precision Machine Tool Units",
+        "quantity": 12,
+        "unit_price": 24000,
+        "amount": 288000
+      }
+    ],
+    "subtotal": 288000,
+    "tax": 0,
+    "total": 288000,
+    "bank_account_printed": "6677010023456",
+    "remit_to_name": "Bharat Industrial Tools Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "Invoice bills 12 units at ₹24,000, but PO-2033 line item specifies only 10 units at the same unit price — a quantity overrun beyond tolerance.",
+    "pdf_filename": "INV-BIT-460.pdf"
+  },
+  {
+    "invoice_number": "INV-ACM-5533",
+    "vendor_name_as_printed": "Acme Tech Pvt. Ltd.",
+    "vendor_id": "V001",
+    "po_reference": "PO-2004",
+    "invoice_date": "2026-09-12",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Software Support & Maintenance Renewal - Annual",
+        "quantity": 1,
+        "unit_price": 83051,
+        "amount": 83051
+      }
+    ],
+    "subtotal": 83051,
+    "tax": 14949,
+    "total": 98000,
+    "bank_account_printed": "50100234567891",
+    "remit_to_name": "Acme Tech Pvt. Ltd.",
+    "document_type": "invoice",
+    "template": "b",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "AUTO_APPROVE",
+    "case_description": "Printed vendor name \"Acme Tech Pvt. Ltd.\" is a formatting variant of the master legal name and known alias — should still resolve to V001 and match cleanly.",
+    "pdf_filename": "INV-ACM-5533.pdf"
+  },
+  {
+    "invoice_number": "INV-VLI-3315",
+    "vendor_name_as_printed": "Vertex Logistics India Pvt Ltd",
+    "vendor_id": "V004",
+    "po_reference": null,
+    "invoice_date": "2026-09-13",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Freight & Logistics Services - Q3 Shipment",
+        "quantity": 1,
+        "unit_price": 54788,
+        "amount": 54788
+      }
+    ],
+    "subtotal": 54788,
+    "tax": 9862,
+    "total": 64650,
+    "bank_account_printed": "33210100889977",
+    "remit_to_name": "Vertex Logistics India Pvt Ltd",
+    "document_type": "invoice",
+    "template": "d",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "REVIEW",
+    "case_description": "No PO reference given. Amount and generic freight description fit both PO-2007 (64,800) and PO-2021 (64,500) within tolerance — genuinely ambiguous which PO this belongs to, so it needs a human to pick.",
+    "pdf_filename": "INV-VLI-3315.pdf"
+  },
+  {
+    "invoice_number": "CN-SOS-0042",
+    "vendor_name_as_printed": "Sterling Office Supplies Pvt. Ltd.",
+    "vendor_id": "V003",
+    "po_reference": "PO-2005",
+    "invoice_date": "2026-09-14",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Credit for Returned Office Chairs (Damaged in Transit)",
+        "quantity": 1,
+        "unit_price": -18644,
+        "amount": -18644
+      }
+    ],
+    "subtotal": -18644,
+    "tax": -3356,
+    "total": -22000,
+    "bank_account_printed": "911020045678123",
+    "remit_to_name": "Sterling Office Supplies Pvt. Ltd.",
+    "document_type": "credit_note",
+    "template": "c",
+    "notes_field": "Credit note against Invoice INV-SOS-7690 / PO-2005 for damaged goods return.",
+    "parent_invoice_number": null,
+    "expected_verdict": "ROUTED_NOT_PAID",
+    "case_description": "Credit note (negative total) against PO-2005 for a goods return — routed for record-keeping, never queued for payment.",
+    "pdf_filename": "CN-SOS-0042.pdf"
+  },
+  {
+    "invoice_number": "INV-MFM-5001",
+    "vendor_name_as_printed": "Meridian Facilities Management Pvt Ltd",
+    "vendor_id": "V007",
+    "po_reference": "PO-2027",
+    "invoice_date": "2026-09-15",
+    "currency": "INR",
+    "line_items": [
+      {
+        "description": "Facilities Management Services - Q2",
+        "quantity": 1,
+        "unit_price": 93220,
+        "amount": 93220
+      }
+    ],
+    "subtotal": 93220,
+    "tax": 16780,
+    "total": 110000,
+    "bank_account_printed": "20880100334455",
+    "remit_to_name": "Meridian Facilities Management Pvt Ltd",
+    "document_type": "invoice",
+    "template": "a",
+    "notes_field": null,
+    "parent_invoice_number": null,
+    "expected_verdict": "BLOCK",
+    "case_description": "Vendor V007 is inactive in the master, and PO-2027 is closed and already fully billed to its total — this invoice should never have been raised.",
+    "pdf_filename": "INV-MFM-5001.pdf"
+  }
+]

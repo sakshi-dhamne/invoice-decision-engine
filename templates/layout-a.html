@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{invoice_number}}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1f2933;
+    font-size: 12px;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 16mm 14mm;
+  }
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #0b5fff;
+    padding-bottom: 14px;
+    margin-bottom: 20px;
+  }
+  .logo-block {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: #0b5fff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .vendor-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0b1f3a;
+  }
+  .vendor-sub {
+    font-size: 11px;
+    color: #5b6b7c;
+    margin-top: 2px;
+    max-width: 260px;
+  }
+  .meta-box {
+    border: 1px solid #d7dee6;
+    border-radius: 6px;
+    padding: 10px 14px;
+    min-width: 220px;
+    background: #f6f9fc;
+  }
+  .meta-box .doc-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #0b5fff;
+    margin-bottom: 8px;
+  }
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    padding: 2px 0;
+  }
+  .meta-row span:first-child { color: #5b6b7c; }
+  .meta-row span:last-child { font-weight: 600; color: #1f2933; }
+  .addresses {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 22px;
+  }
+  .addr-block { flex: 1; }
+  .addr-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8593a3;
+    margin-bottom: 4px;
+  }
+  .addr-name { font-weight: 700; font-size: 13px; margin-bottom: 2px; }
+  .addr-line { color: #4a5765; line-height: 1.5; }
+  table.items {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 18px;
+  }
+  table.items thead th {
+    background: #0b1f3a;
+    color: #fff;
+    text-align: left;
+    font-size: 10.5px;
+    padding: 8px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  table.items thead th.num { text-align: right; }
+  table.items tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid #e7ecf1;
+    font-size: 11.5px;
+  }
+  table.items tbody td.num { text-align: right; }
+  .totals {
+    width: 280px;
+    margin-left: auto;
+    margin-bottom: 26px;
+  }
+  .totals-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  .totals-row.grand {
+    background: #0b1f3a;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13.5px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #e7ecf1;
+  }
+  .bank-block, .notes-block { flex: 1; font-size: 11px; color: #4a5765; }
+  .footer-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #8593a3;
+    margin-bottom: 4px;
+  }
+  .remit { font-weight: 700; color: #1f2933; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="logo-block">
+      <div class="logo-mark">{{vendor.initial}}</div>
+      <div>
+        <div class="vendor-name">{{vendor.name}}</div>
+        <div class="vendor-sub">{{vendor.address_line1}}, {{vendor.city_state_pin}}<br/>GSTIN: {{vendor.gstin}}</div>
+      </div>
+    </div>
+    <div class="meta-box">
+      <div class="doc-title">{{doc_title}}</div>
+      <div class="meta-row"><span>Invoice #</span><span>{{invoice_number}}</span></div>
+      <div class="meta-row"><span>Date</span><span>{{invoice_date_formatted}}</span></div>
+      {{#if has_po}}<div class="meta-row"><span>PO Reference</span><span>{{po_reference}}</span></div>{{/if}}
+      <div class="meta-row"><span>Currency</span><span>{{currency}}</span></div>
+    </div>
+  </div>
+
+  <div class="addresses">
+    <div class="addr-block">
+      <div class="addr-label">Billed To</div>
+      <div class="addr-name">{{buyer.name}}</div>
+      <div class="addr-line">{{buyer.address_line1}}<br/>{{buyer.city_state_pin}}<br/>GSTIN: {{buyer.gstin}}</div>
+    </div>
+    <div class="addr-block">
+      <div class="addr-label">Vendor Contact</div>
+      <div class="addr-line">{{vendor.email}}</div>
+    </div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Description</th>
+        <th class="num">Qty</th>
+        <th class="num">Unit Price</th>
+        <th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each line_items}}
+      <tr>
+        <td>{{this.index}}</td>
+        <td>{{this.description}}</td>
+        <td class="num">{{this.quantity}}</td>
+        <td class="num">{{this.unit_price_formatted}}</td>
+        <td class="num">{{this.amount_formatted}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="totals-row"><span>Subtotal</span><span>{{subtotal_formatted}}</span></div>
+    {{#if show_tax_row}}<div class="totals-row"><span>Tax (GST)</span><span>{{tax_formatted}}</span></div>{{/if}}
+    <div class="totals-row grand"><span>Total</span><span id="total-value">{{total_formatted}}</span></div>
+  </div>
+
+  <div class="footer">
+    <div class="bank-block">
+      <div class="footer-label">Bank Details</div>
+      Account: {{bank_account_printed}}<br/>
+      IFSC: {{ifsc_printed}}<br/>
+      Remit To: <span class="remit">{{remit_to_name}}</span>
+    </div>
+    {{#if has_notes}}
+    <div class="notes-block">
+      <div class="footer-label">Notes</div>
+      {{notes_field}}
+    </div>
+    {{/if}}
+  </div>
+</body>
+</html>

@@ -1,0 +1,130 @@
+[
+  {
+    "id": "V001",
+    "legal_name": "Acme Technologies Pvt Ltd",
+    "aliases": ["Acme Tech", "Acme Technologies"],
+    "bank_account": "50100234567891",
+    "ifsc": "HDFC0001234",
+    "gstin": "27AABCA1234C1Z5",
+    "email_domain": "acmetechnologies.com",
+    "status": "active",
+    "address": {
+      "line1": "4th Floor, Cerebrum IT Park, Kalyani Nagar",
+      "city": "Pune",
+      "state": "Maharashtra",
+      "pincode": "411014"
+    }
+  },
+  {
+    "id": "V002",
+    "legal_name": "Nimbus Cloud Services Private Limited",
+    "aliases": ["Nimbus Cloud"],
+    "bank_account": "004701551234",
+    "ifsc": "ICIC0004567",
+    "gstin": "29AACCN5678D1Z2",
+    "email_domain": "nimbuscloud.in",
+    "status": "active",
+    "address": {
+      "line1": "Tower B, Prestige Tech Park, Kadubeesanahalli",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560103"
+    }
+  },
+  {
+    "id": "V003",
+    "legal_name": "Sterling Office Supplies Pvt. Ltd.",
+    "aliases": ["Sterling Office"],
+    "bank_account": "911020045678123",
+    "ifsc": "UTIB0000456",
+    "gstin": "27AADCS9012E1Z8",
+    "email_domain": "sterlingoffice.co.in",
+    "status": "active",
+    "address": {
+      "line1": "203 Mittal Industrial Estate, Andheri Kurla Road",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400059"
+    }
+  },
+  {
+    "id": "V004",
+    "legal_name": "Vertex Logistics India Pvt Ltd",
+    "aliases": ["Vertex Logistics"],
+    "bank_account": "33210100889977",
+    "ifsc": "SBIN0003321",
+    "gstin": "06AAECV3456F1Z1",
+    "email_domain": "vertexlogistics.in",
+    "status": "active",
+    "address": {
+      "line1": "Plot 14, Sector 44, Udyog Vihar Phase V",
+      "city": "Gurugram",
+      "state": "Haryana",
+      "pincode": "122016"
+    }
+  },
+  {
+    "id": "V005",
+    "legal_name": "Quantum Consulting LLP",
+    "aliases": ["Quantum Consulting"],
+    "bank_account": "50200078451236",
+    "ifsc": "HDFC0000789",
+    "gstin": "29AAFQ7890G1Z4",
+    "email_domain": "quantumconsulting.in",
+    "status": "active",
+    "address": {
+      "line1": "6th Floor, Vaswani Chambers, Koramangala",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560095"
+    }
+  },
+  {
+    "id": "V006",
+    "legal_name": "Bharat Industrial Tools Pvt Ltd",
+    "aliases": ["Bharat Tools", "BIT"],
+    "bank_account": "6677010023456",
+    "ifsc": "KKBK0000123",
+    "gstin": "24AABCB2345H1Z9",
+    "email_domain": "bharattools.com",
+    "status": "active",
+    "address": {
+      "line1": "Plot 212, Phase II, GIDC Vatva",
+      "city": "Ahmedabad",
+      "state": "Gujarat",
+      "pincode": "382445"
+    }
+  },
+  {
+    "id": "V007",
+    "legal_name": "Meridian Facilities Management Pvt Ltd",
+    "aliases": ["Meridian FM"],
+    "bank_account": "20880100334455",
+    "ifsc": "BARB0MERIDI",
+    "gstin": "27AAGCM6789J1Z3",
+    "email_domain": "meridianfm.in",
+    "status": "inactive",
+    "address": {
+      "line1": "301 Marol Co-operative Industrial Estate",
+      "city": "Mumbai",
+      "state": "Maharashtra",
+      "pincode": "400059"
+    }
+  },
+  {
+    "id": "V008",
+    "legal_name": "Helix Software Labs Pvt Ltd",
+    "aliases": ["Helix Labs"],
+    "bank_account": "12340100556677",
+    "ifsc": "YESB0001234",
+    "gstin": "29AAHCH4567K1Z7",
+    "email_domain": "helixlabs.io",
+    "status": "active",
+    "address": {
+      "line1": "5th Floor, Salarpuria Softzone, Bellandur",
+      "city": "Bengaluru",
+      "state": "Karnataka",
+      "pincode": "560103"
+    }
+  }
+]

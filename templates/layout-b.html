@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{invoice_number}}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Times New Roman", Georgia, serif;
+    color: #1a1a1a;
+    font-size: 12.5px;
+    width: 210mm;
+    min-height: 297mm;
+    padding: 18mm 16mm;
+    border: 6px double #3a2f1b;
+  }
+  .letterhead {
+    text-align: center;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 2px solid #3a2f1b;
+  }
+  .letterhead .name {
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .letterhead .addr {
+    font-size: 11px;
+    margin-top: 4px;
+    color: #3a2f1b;
+  }
+  .doc-title {
+    text-align: center;
+    font-size: 16px;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin: 14px 0;
+    text-decoration: underline;
+  }
+  table.meta {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 11.5px;
+  }
+  table.meta td {
+    border: 1px solid #3a2f1b;
+    padding: 6px 10px;
+  }
+  table.meta td.label {
+    font-weight: bold;
+    width: 22%;
+    background: #f2ede1;
+  }
+  .bill-to {
+    border: 1px solid #3a2f1b;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    font-size: 11.5px;
+  }
+  .bill-to .label { font-weight: bold; text-decoration: underline; margin-bottom: 4px; }
+  table.items {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 4px;
+  }
+  table.items th, table.items td {
+    border: 1px solid #3a2f1b;
+    padding: 8px 10px;
+    font-size: 11.5px;
+  }
+  table.items th {
+    background: #3a2f1b;
+    color: #f2ede1;
+    text-align: left;
+  }
+  table.items td.num, table.items th.num { text-align: right; }
+  .total-line {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+    margin-bottom: 22px;
+  }
+  .total-box {
+    border: 2px solid #3a2f1b;
+    padding: 8px 18px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #f2ede1;
+  }
+  .tax-note {
+    font-size: 10px;
+    font-style: italic;
+    color: #5a4d33;
+    text-align: right;
+    margin-top: 4px;
+  }
+  .footer-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    font-size: 11px;
+  }
+  .footer-table td {
+    border: 1px solid #3a2f1b;
+    padding: 8px 10px;
+    vertical-align: top;
+    width: 50%;
+  }
+  .footer-table .label { font-weight: bold; text-decoration: underline; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <div class="letterhead">
+    <div class="name">{{vendor.name}}</div>
+    <div class="addr">{{vendor.address_line1}}, {{vendor.city_state_pin}} &middot; GSTIN {{vendor.gstin}} &middot; {{vendor.email}}</div>
+  </div>
+
+  <div class="doc-title">{{doc_title}}</div>
+
+  <table class="meta">
+    <tr>
+      <td class="label">Invoice Number</td><td>{{invoice_number}}</td>
+      <td class="label">Invoice Date</td><td>{{invoice_date_formatted}}</td>
+    </tr>
+    <tr>
+      <td class="label">Currency</td><td>{{currency}}</td>
+      <td class="label">PO Reference</td><td>{{#if has_po}}{{po_reference}}{{/if}}</td>
+    </tr>
+  </table>
+
+  <div class="bill-to">
+    <div class="label">Bill To</div>
+    {{buyer.name}}, {{buyer.address_line1}}, {{buyer.city_state_pin}} &middot; GSTIN {{buyer.gstin}}
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Particulars</th>
+        <th class="num">Qty</th>
+        <th class="num">Rate</th>
+        <th class="num">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each line_items}}
+      <tr>
+        <td>{{this.index}}</td>
+        <td>{{this.description}}</td>
+        <td class="num">{{this.quantity}}</td>
+        <td class="num">{{this.unit_price_formatted}}</td>
+        <td class="num">{{this.amount_formatted}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  <div class="tax-note">All applicable taxes are included in the amounts shown above.</div>
+
+  <div class="total-line">
+    <div class="total-box">Total Payable: <span id="total-value">{{total_formatted}}</span></div>
+  </div>
+
+  <table class="footer-table">
+    <tr>
+      <td>
+        <div class="label">Bank Details</div>
+        Account No.: {{bank_account_printed}}<br/>
+        IFSC: {{ifsc_printed}}<br/>
+        Remit To: {{remit_to_name}}
+      </td>
+      <td>
+        <div class="label">Notes</div>
+        {{#if has_notes}}{{notes_field}}{{/if}}
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
