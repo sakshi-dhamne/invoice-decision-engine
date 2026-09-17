@@ -15,6 +15,16 @@ const PDFS_DIR = path.join(FIXTURES_DIR, 'pdfs')
 // instead of letting Playwright try (and fail) to download one.
 const CHROMIUM_EXECUTABLE = '/opt/pw-browsers/chromium'
 
+// The scanned-invoice pipeline screenshots the page at 150 DPI. Templates are laid out in
+// CSS pixels at the standard 96 DPI, so the viewport must match the CSS content box exactly
+// (210mm x 297mm) — inflating the viewport itself just bakes in blank margin around the
+// content, which is what previously made the embedded scan render small in the PDF's
+// top-left corner instead of filling the page. The DPI bump comes from deviceScaleFactor.
+const CSS_PX_PER_MM = 96 / 25.4
+const A4_CSS_WIDTH = Math.round(210 * CSS_PX_PER_MM)
+const A4_CSS_HEIGHT = Math.round(297 * CSS_PX_PER_MM)
+const SCAN_DEVICE_SCALE_FACTOR = 150 / 96
+
 interface Vendor {
   id: string
   legal_name: string
@@ -194,12 +204,18 @@ function randomNoisePatch(width: number, height: number, alpha: number): Buffer 
   return buffer
 }
 
-async function obscureRegion(pngBuffer: Buffer, region: { x: number; y: number; width: number; height: number }): Promise<Buffer> {
-  const padding = 14
-  const left = Math.max(0, Math.round(region.x) - padding)
-  const top = Math.max(0, Math.round(region.y) - padding)
-  const width = Math.round(region.width) + padding * 2
-  const height = Math.round(region.height) + padding * 2
+async function obscureRegion(
+  pngBuffer: Buffer,
+  region: { x: number; y: number; width: number; height: number },
+  scaleFactor: number,
+): Promise<Buffer> {
+  // boundingBox() reports CSS pixels; the screenshot buffer is rasterized at deviceScaleFactor,
+  // so the region has to be scaled up to land on the right pixels in that buffer.
+  const padding = Math.round(14 * scaleFactor)
+  const left = Math.max(0, Math.round(region.x * scaleFactor) - padding)
+  const top = Math.max(0, Math.round(region.y * scaleFactor) - padding)
+  const width = Math.round(region.width * scaleFactor) + padding * 2
+  const height = Math.round(region.height * scaleFactor) + padding * 2
 
   const degradedPatch = await sharp(pngBuffer)
     .extract({ left, top, width, height })
@@ -285,16 +301,23 @@ async function main() {
       const viewModel = buildViewModel(record, vendorsById)
       const html = render(templateSources.get(record.template)!, viewModel)
 
-      const page = await browser.newPage()
+      // Scanned records are screenshotted at the CSS content box's own size (matching the
+      // template's fixed 210mm width) with deviceScaleFactor doing the 150 DPI upscaling —
+      // an inflated CSS viewport would just add blank margin around the content instead.
+      const page = record.scanned
+        ? await browser.newPage({
+            viewport: { width: A4_CSS_WIDTH, height: A4_CSS_HEIGHT },
+            deviceScaleFactor: SCAN_DEVICE_SCALE_FACTOR,
+          })
+        : await browser.newPage()
       await page.setContent(html, { waitUntil: 'networkidle' })
 
       const outputPath = path.join(PDFS_DIR, record.pdf_filename)
 
       if (record.scanned) {
-        await page.setViewportSize({ width: 1240, height: 1754 })
         const totalBox = await page.locator('#total-value').boundingBox()
         const rawPng = await page.screenshot({ type: 'png', fullPage: true })
-        const withObscuredTotal = totalBox ? await obscureRegion(rawPng, totalBox) : rawPng
+        const withObscuredTotal = totalBox ? await obscureRegion(rawPng, totalBox, SCAN_DEVICE_SCALE_FACTOR) : rawPng
         const scannedJpeg = await applyScanEffect(withObscuredTotal)
         const pdfBytes = await wrapJpegInPdf(scannedJpeg)
         await writeFile(outputPath, pdfBytes)
