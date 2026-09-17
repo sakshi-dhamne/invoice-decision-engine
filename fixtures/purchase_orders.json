@@ -1,0 +1,210 @@
+[
+  {
+    "po_number": "PO-2001",
+    "vendor_id": "V001",
+    "total_amount": 118000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-10",
+    "line_items": [
+      { "description": "Enterprise Software License - Annual Subscription", "quantity": 1, "unit_price": 118000, "amount": 118000 }
+    ]
+  },
+  {
+    "po_number": "PO-2002",
+    "vendor_id": "V001",
+    "total_amount": 850000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-01",
+    "line_items": [
+      { "description": "Dell PowerEdge R750 Server", "quantity": 2, "unit_price": 190000, "amount": 380000 },
+      { "description": "Cisco Catalyst 9300 Network Switch", "quantity": 4, "unit_price": 45000, "amount": 180000 },
+      { "description": "Installation & Configuration Services", "quantity": 1, "unit_price": 100000, "amount": 100000 },
+      { "description": "Extended Warranty - 3 Year Onsite", "quantity": 1, "unit_price": 190000, "amount": 190000 }
+    ]
+  },
+  {
+    "po_number": "PO-2003",
+    "vendor_id": "V002",
+    "total_amount": 87500,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "inclusive",
+    "status": "open",
+    "issued_date": "2026-08-12",
+    "line_items": [
+      { "description": "Cloud Hosting - Annual Subscription (Tax Inclusive)", "quantity": 1, "unit_price": 87500, "amount": 87500 }
+    ]
+  },
+  {
+    "po_number": "PO-2004",
+    "vendor_id": "V001",
+    "total_amount": 98000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-14",
+    "line_items": [
+      { "description": "Software Support & Maintenance Renewal - Annual", "quantity": 1, "unit_price": 98000, "amount": 98000 }
+    ]
+  },
+  {
+    "po_number": "PO-2005",
+    "vendor_id": "V003",
+    "total_amount": 145200,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-05",
+    "line_items": [
+      { "description": "Ergonomic Office Chairs", "quantity": 30, "unit_price": 3000, "amount": 90000 },
+      { "description": "Modular Workstation Desks", "quantity": 15, "unit_price": 3680, "amount": 55200 }
+    ]
+  },
+  {
+    "po_number": "PO-2007",
+    "vendor_id": "V004",
+    "total_amount": 64800,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-15",
+    "line_items": [
+      { "description": "Freight & Logistics Services - Outbound Shipment Q3", "quantity": 1, "unit_price": 64800, "amount": 64800 }
+    ]
+  },
+  {
+    "po_number": "PO-2010",
+    "vendor_id": "V005",
+    "total_amount": 172000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "inclusive",
+    "status": "open",
+    "issued_date": "2026-08-06",
+    "line_items": [
+      { "description": "Consulting Package A - Strategy & Advisory (Bundled)", "quantity": 1, "unit_price": 96000, "amount": 96000 },
+      { "description": "Consulting Package B - Implementation Support (Bundled)", "quantity": 1, "unit_price": 76000, "amount": 76000 }
+    ]
+  },
+  {
+    "po_number": "PO-2012",
+    "vendor_id": "V003",
+    "total_amount": 184500,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-18",
+    "line_items": [
+      { "description": "Office Stationery - Bulk Supply", "quantity": 1, "unit_price": 110000, "amount": 110000 },
+      { "description": "Printer & Toner Cartridges - Bulk Supply", "quantity": 1, "unit_price": 74500, "amount": 74500 }
+    ]
+  },
+  {
+    "po_number": "PO-2014",
+    "vendor_id": "V004",
+    "total_amount": 166000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-19",
+    "line_items": [
+      { "description": "Warehousing & Distribution Services - Q3", "quantity": 1, "unit_price": 166000, "amount": 166000 }
+    ]
+  },
+  {
+    "po_number": "PO-2019",
+    "vendor_id": "V008",
+    "total_amount": 226000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-03",
+    "line_items": [
+      { "description": "Custom Software Development - Module Build", "quantity": 1, "unit_price": 226000, "amount": 226000 }
+    ]
+  },
+  {
+    "po_number": "PO-2021",
+    "vendor_id": "V004",
+    "total_amount": 64500,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-16",
+    "line_items": [
+      { "description": "Freight & Logistics Services - Inbound Shipment Q3", "quantity": 1, "unit_price": 64500, "amount": 64500 }
+    ]
+  },
+  {
+    "po_number": "PO-2027",
+    "vendor_id": "V007",
+    "total_amount": 110000,
+    "currency": "INR",
+    "amount_billed_to_date": 110000,
+    "tax_treatment": "exclusive",
+    "status": "closed",
+    "issued_date": "2026-06-20",
+    "line_items": [
+      { "description": "Facilities Management Services - Q2", "quantity": 1, "unit_price": 110000, "amount": 110000 }
+    ]
+  },
+  {
+    "po_number": "PO-2031",
+    "vendor_id": "V006",
+    "total_amount": 975000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-01",
+    "line_items": [
+      { "description": "Industrial Tooling Equipment - Bulk Order", "quantity": 1, "unit_price": 975000, "amount": 975000 }
+    ]
+  },
+  {
+    "po_number": "PO-2033",
+    "vendor_id": "V006",
+    "total_amount": 240000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-08-20",
+    "line_items": [
+      { "description": "Precision Machine Tool Units", "quantity": 10, "unit_price": 24000, "amount": 240000 }
+    ]
+  },
+  {
+    "po_number": "PO-2044",
+    "vendor_id": "V002",
+    "total_amount": 480000,
+    "currency": "INR",
+    "amount_billed_to_date": 0,
+    "tax_treatment": "exclusive",
+    "status": "open",
+    "issued_date": "2026-07-15",
+    "line_items": [
+      { "description": "Environment Setup & Migration", "quantity": 1, "unit_price": 142300, "amount": 142300 },
+      { "description": "Data Pipeline Build", "quantity": 1, "unit_price": 188900, "amount": 188900 },
+      { "description": "Handover & Training", "quantity": 1, "unit_price": 148800, "amount": 148800 }
+    ],
+    "delivery_schedule": [
+      { "milestone": "M1", "description": "Environment setup & migration", "amount": 142300, "due_date": "2026-08-05" },
+      { "milestone": "M2", "description": "Data pipeline build", "amount": 188900, "due_date": "2026-08-26" },
+      { "milestone": "M3", "description": "Handover & training", "amount": 148800, "due_date": "2026-09-16" }
+    ]
+  }
+]
