@@ -142,6 +142,14 @@ alter table stage_logs enable row level security;
 alter table rules enable row level security;
 alter table assumptions enable row level security;
 
+drop policy if exists "anon full access" on vendors;
+drop policy if exists "anon full access" on purchase_orders;
+drop policy if exists "anon full access" on invoices;
+drop policy if exists "anon full access" on runs;
+drop policy if exists "anon full access" on stage_logs;
+drop policy if exists "anon full access" on rules;
+drop policy if exists "anon full access" on assumptions;
+
 create policy "anon full access" on vendors for all to anon using (true) with check (true);
 create policy "anon full access" on purchase_orders for all to anon using (true) with check (true);
 create policy "anon full access" on invoices for all to anon using (true) with check (true);
@@ -153,5 +161,24 @@ create policy "anon full access" on assumptions for all to anon using (true) wit
 -- ============================================================================
 -- Realtime — live run view subscribes to stage_logs and runs
 -- ============================================================================
-alter publication supabase_realtime add table stage_logs;
-alter publication supabase_realtime add table runs;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'stage_logs'
+  ) then
+    alter publication supabase_realtime add table stage_logs;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'runs'
+  ) then
+    alter publication supabase_realtime add table runs;
+  end if;
+end $$;
+
+-- Replica identity full so realtime UPDATE/DELETE payloads include old row
+-- values (not just the primary key), which the live run view needs to diff.
+alter table stage_logs replica identity full;
+alter table runs replica identity full;
