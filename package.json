@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "generate:fixtures": "tsx scripts/generate-invoices.ts"
+    "generate:fixtures": "tsx scripts/generate-invoices.ts",
+    "generate:seed": "tsx scripts/generate-seed.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
