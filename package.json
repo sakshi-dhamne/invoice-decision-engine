@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "npm run sync:pdfs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
     "generate:fixtures": "tsx scripts/generate-invoices.ts",
-    "generate:seed": "tsx scripts/generate-seed.ts"
+    "generate:seed": "tsx scripts/generate-seed.ts",
+    "sync:pdfs": "tsx scripts/copy-fixtures-to-public.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
