@@ -52,15 +52,21 @@ export interface ExtractionResult {
   extraction_notes: string | null
 }
 
+export type ExtractionProviderName = 'gemini' | 'anthropic'
+
 export interface ExtractInvoiceRequest {
   pdf_base64: string
   invoice_number?: string
+  // Forces the chain down to entries for this provider only, bypassing fallback
+  // to the others — used by the harness's `?provider=` testing mode.
+  provider?: ExtractionProviderName
 }
 
 export interface ExtractInvoiceSuccess {
   ok: true
   data: ExtractionResult
   model: string
+  provider: ExtractionProviderName
   duration_ms: number
 }
 
@@ -70,8 +76,6 @@ export interface ExtractInvoiceFailure {
 }
 
 export type ExtractInvoiceResponse = ExtractInvoiceSuccess | ExtractInvoiceFailure
-
-export const DEFAULT_EXTRACTION_MODEL = 'gemini-3.7-flash'
 
 // Gemini's `responseSchema` follows a subset of OpenAPI 3.0 (the `Schema` object from
 // https://ai.google.dev/api/rest/v1beta/Schema) — uppercase `type` strings, not JSON Schema.
@@ -140,7 +144,10 @@ const STRING_OR_NULL_FIELDS = [
 
 const NUMBER_OR_NULL_FIELDS = ['subtotal', 'tax', 'total'] as const
 
-function describeExtractionResultShapeError(value: unknown): string | null {
+// Exported so both extraction adapters can validate against the same contract:
+// Gemini's JSON-text response (via parseExtractionResponseText below) and
+// Anthropic's already-parsed tool_use.input (validated directly by providers/anthropic.ts).
+export function describeExtractionResultShapeError(value: unknown): string | null {
   if (typeof value !== 'object' || value === null) return 'response is not an object'
   const v = value as Record<string, unknown>
 
