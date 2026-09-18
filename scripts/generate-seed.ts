@@ -65,10 +65,18 @@ interface InvoiceFixture {
   bank_account_printed: string
   remit_to_name: string
   document_type: 'invoice' | 'credit_note'
+  template: 'a' | 'b' | 'c' | 'd' | 'e'
   notes_field: string | null
   parent_invoice_number: string | null
   expected_verdict: string
   pdf_filename: string
+}
+
+// Layout "b" (templates/layout-b.html, showTaxRow = false) prints a single
+// tax-inclusive total with no separate subtotal/tax line — see the note in
+// 004_fields_not_printed.sql. Every template-b invoice gets both fields flagged.
+function fieldsNotPrintedFor(invoice: InvoiceFixture): string[] | null {
+  return invoice.template === 'b' ? ['subtotal', 'tax'] : null
 }
 
 interface RuleSeed {
@@ -249,6 +257,15 @@ async function main() {
     ),
   )
 
+  // Defensive: lets a fresh 001 → 002 → 003 → 004 run insert fields_not_printed
+  // straight away, without requiring 004_fields_not_printed.sql to have run
+  // first. 004 re-adds the column with the same IF NOT EXISTS guard for the
+  // case where 002 was seeded before this column existed (the live project's
+  // history) and backfills it there — both paths are idempotent.
+  parts.push('-- fields_not_printed column (see 004_fields_not_printed.sql)')
+  parts.push('alter table invoices add column if not exists fields_not_printed text[];')
+  parts.push('')
+
   parts.push('-- invoices')
   parts.push(
     buildInsert(
@@ -273,6 +290,7 @@ async function main() {
         'parent_invoice_number',
         'notes_field',
         'expected_verdict',
+        'fields_not_printed',
       ],
       invoices.map((inv) => [
         sqlString(inv.invoice_number),
@@ -294,6 +312,7 @@ async function main() {
         sqlString(inv.parent_invoice_number),
         sqlString(inv.notes_field),
         sqlString(inv.expected_verdict),
+        sqlTextArray(fieldsNotPrintedFor(inv)),
       ]),
     ),
   )

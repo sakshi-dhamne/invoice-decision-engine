@@ -59,10 +59,24 @@ export type InvoiceRow = {
   parent_invoice_number: string | null
   notes_field: string | null
   expected_verdict: string | null
+  fields_not_printed: string[] | null
   created_at: string
 }
 
 export type InvoiceInsert = Partial<InvoiceRow> & Pick<InvoiceRow, 'invoice_number'>
+
+export type ExtractionRow = {
+  id: string
+  invoice_id: string
+  extracted_data: Json
+  model: string
+  duration_ms: number | null
+  is_current: boolean
+  created_at: string
+}
+
+export type ExtractionInsert = Partial<ExtractionRow> &
+  Pick<ExtractionRow, 'invoice_id' | 'extracted_data' | 'model'>
 
 export type RunStatus = 'running' | 'complete' | 'failed'
 export type Verdict = 'AUTO_APPROVE' | 'REVIEW' | 'HOLD' | 'BLOCK' | 'ROUTED_NOT_PAID'
@@ -130,6 +144,8 @@ export type Database = {
       purchase_orders: { Row: PurchaseOrderRow; Insert: PurchaseOrderInsert; Update: Partial<PurchaseOrderInsert> } &
         EmptyRelationships
       invoices: { Row: InvoiceRow; Insert: InvoiceInsert; Update: Partial<InvoiceInsert> } & EmptyRelationships
+      extractions: { Row: ExtractionRow; Insert: ExtractionInsert; Update: Partial<ExtractionInsert> } &
+        EmptyRelationships
       runs: { Row: RunRow; Insert: RunInsert; Update: RunUpdate } & EmptyRelationships
       stage_logs: { Row: StageLogRow; Insert: StageLogInsert; Update: Partial<StageLogInsert> } & EmptyRelationships
       rules: { Row: RuleRow; Insert: RuleInsert; Update: Partial<RuleRow> } & EmptyRelationships
