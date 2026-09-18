@@ -55,6 +55,7 @@ uniformity ceiling).
 
 ## Running it
 
+
 ```bash
 npm install
 npm run dev        # /harness runs extraction and the pipeline over all 27 fixtures
