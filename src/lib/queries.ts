@@ -143,6 +143,37 @@ export async function logStage(
   return data
 }
 
+export async function updateStageLog(id: string, patch: Partial<StageLogRow>): Promise<StageLogRow> {
+  const { data, error } = await supabase.from('stage_logs').update(patch).eq('id', id).select('*').single()
+  if (error) throw error
+  return data
+}
+
+// Completed runs, oldest first — the cross-invoice context the duplicate and
+// resubmission-lineage rules read.
+export async function getCompletedRuns(): Promise<RunRow[]> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('*')
+    .eq('status', 'complete')
+    .order('started_at', { ascending: true })
+  if (error) throw error
+  return data
+}
+
+// Ingest records the document's content hash the first time it is seen, so a
+// later submission of the same file can be recognised as an exact duplicate.
+export async function setInvoiceFileHash(invoiceId: string, fileHash: string): Promise<void> {
+  const { error } = await supabase.from('invoices').update({ file_hash: fileHash }).eq('id', invoiceId)
+  if (error) throw error
+}
+
+export async function getInvoiceById(id: string): Promise<InvoiceRow | null> {
+  const { data, error } = await supabase.from('invoices').select('*').eq('id', id).maybeSingle()
+  if (error) throw error
+  return data
+}
+
 export async function getRules(): Promise<Record<string, RuleRow>> {
   const { data, error } = await supabase.from('rules').select('*')
   if (error) throw error

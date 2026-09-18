@@ -3,7 +3,7 @@ import {
   describeExtractionResultShapeError,
   type ExtractionResult,
 } from '../../../../src/lib/extractionSchema.ts'
-import { ProviderError, type ExtractionProvider } from './types.ts'
+import { ProviderError, type ExtractionProvider, type TextProvider } from './types.ts'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -116,6 +116,52 @@ export function createAnthropicProvider(model: string, apiKey: string): Extracti
       }
 
       return toolUse.input as ExtractionResult
+    },
+  }
+}
+
+interface AnthropicTextBlock {
+  type?: string
+  text?: string
+}
+
+// Same endpoint, version header and error mapping as the extraction adapter; no
+// tool, because stage 7 wants a sentence rather than a record.
+export function createAnthropicTextProvider(model: string, apiKey: string): TextProvider {
+  return {
+    async complete(prompt) {
+      const response = await fetch(ANTHROPIC_API_URL, {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': ANTHROPIC_VERSION,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: MAX_TOKENS,
+          temperature: 0.2,
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new ProviderError(`Anthropic request failed (${response.status}): ${errorText}`, response.status)
+      }
+
+      const payload = await response.json()
+      const blocks: AnthropicTextBlock[] = Array.isArray(payload?.content) ? payload.content : []
+      const text = blocks
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text ?? '')
+        .join('')
+        .trim()
+
+      if (text.length === 0) {
+        throw new ProviderError(`Anthropic response had no text block: ${JSON.stringify(payload)}`, 502)
+      }
+      return text
     },
   }
 }

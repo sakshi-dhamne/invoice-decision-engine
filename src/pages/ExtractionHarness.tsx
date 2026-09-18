@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { getCurrentExtractions, getOrExtract, providerForModel } from '@/lib/extraction.ts'
 import type { ExtractionProviderName, ExtractionResult } from '@/lib/extractionSchema.ts'
 import { getInvoices } from '@/lib/queries.ts'
+import PipelineHarness from '@/pages/PipelineHarness'
 import type { InvoiceRow } from '@/lib/database.types.ts'
 import { cn } from '@/lib/utils'
 
@@ -334,6 +335,8 @@ function ExtractionHarness() {
           </div>
         </CardContent>
       </Card>
+
+      <PipelineHarness />
 
       <Table>
         <TableHeader>
