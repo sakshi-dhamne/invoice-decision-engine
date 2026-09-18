@@ -1,0 +1,625 @@
+// Pipeline orchestration — stages 1 to 7.
+//
+// This is the only file in the decision path that talks to the database or the
+// network. Everything in `src/rules/` is pure; the pipeline fetches what those
+// rules need, runs them, and writes the result. That split is what lets the whole
+// engine be tested offline.
+//
+// Each stage writes a `stage_logs` row as `running` before it executes and updates
+// it to `passed` or `flagged` afterwards, with its input, output, reasoning and
+// duration. A stage that throws is marked `failed`, the run is marked `failed` with
+// the stage named, and nothing is left stuck in `running`.
+
+import { getOrExtract } from './extraction.ts'
+import type { ExtractionResult } from './extractionSchema.ts'
+import { supabase } from './supabase.ts'
+import {
+  createRun,
+  getCompletedRuns,
+  getInvoiceById,
+  getInvoices,
+  getPurchaseOrders,
+  getRules,
+  getVendors,
+  logStage,
+  setInvoiceFileHash,
+  updateRun,
+  updateStageLog,
+} from './queries.ts'
+import type { InvoiceRow, Json, PurchaseOrderRow, RunRow, StageLogStatus, VendorRow } from './database.types.ts'
+
+import { decide, skippedChecks } from '@/rules/decide.ts'
+import { matchPurchaseOrder } from '@/rules/poMatch.ts'
+import { resolveVendor } from '@/rules/vendor.ts'
+import { runValidations } from '@/rules/validate.ts'
+import type { PriorRunHash, ValidationReport } from '@/rules/validate.ts'
+import { toRuleSet } from '@/rules/types.ts'
+import type {
+  InvoiceFacts,
+  LineItemFact,
+  PriorRun,
+  PurchaseOrderLine,
+  PurchaseOrderRecord,
+  ReasonCode,
+  RuleSet,
+  SubmissionRecord,
+  Verdict,
+  VendorRecord,
+} from '@/rules/types.ts'
+import { fallbackExplanation } from '@/rules/explain.ts'
+import type { ExplainDecisionRequest, ExplainDecisionResponse } from '@/rules/explain.ts'
+
+// ---------------------------------------------------------------------------
+// Row adapters — Supabase shapes in, plain rule records out
+// ---------------------------------------------------------------------------
+
+function asArray<T>(value: Json | null): T[] {
+  return Array.isArray(value) ? (value as unknown as T[]) : []
+}
+
+export function toVendorRecord(row: VendorRow): VendorRecord {
+  return {
+    id: row.id,
+    legal_name: row.legal_name,
+    aliases: row.aliases ?? [],
+    bank_account: row.bank_account,
+    status: row.status,
+  }
+}
+
+export function toPurchaseOrderRecord(row: PurchaseOrderRow): PurchaseOrderRecord {
+  return {
+    po_number: row.po_number,
+    vendor_id: row.vendor_id,
+    total_amount: row.total_amount,
+    currency: row.currency,
+    amount_billed_to_date: row.amount_billed_to_date,
+    tax_treatment: row.tax_treatment,
+    status: row.status,
+    line_items: asArray<PurchaseOrderLine>(row.line_items),
+    delivery_schedule: row.delivery_schedule ? asArray(row.delivery_schedule) : null,
+    issued_date: row.issued_date,
+  }
+}
+
+/**
+ * The facts the rules decide on come from the extraction, never from the fixture
+ * columns on `invoices` — those exist so the harness can score extraction accuracy.
+ *
+ * `fields_not_printed` is the union of what the document is known not to print and
+ * what the model reported it could not read. Both mean the same thing to a rule: a
+ * null there is an absence, not a wrong value.
+ */
+export function toInvoiceFacts(extraction: ExtractionResult, invoice: InvoiceRow): InvoiceFacts {
+  const notPrinted = new Set<string>([...(invoice.fields_not_printed ?? []), ...(extraction.unreadable_fields ?? [])])
+
+  return {
+    invoice_number: extraction.invoice_number,
+    invoice_date: extraction.invoice_date,
+    vendor_name: extraction.vendor_name,
+    po_reference: extraction.po_reference,
+    currency: extraction.currency,
+    line_items: (extraction.line_items ?? []).map(
+      (line): LineItemFact => ({
+        description: line.description ?? null,
+        quantity: line.quantity ?? null,
+        unit_price: line.unit_price ?? null,
+        amount: line.amount ?? null,
+      }),
+    ),
+    subtotal: extraction.subtotal,
+    tax: extraction.tax,
+    total: extraction.total,
+    bank_account: extraction.bank_account,
+    remit_to_name: extraction.remit_to_name,
+    document_type: extraction.document_type,
+    notes: extraction.notes,
+    file_hash: invoice.file_hash,
+    fields_not_printed: [...notPrinted],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared read-only context
+// ---------------------------------------------------------------------------
+
+export interface PipelineContext {
+  rules: RuleSet
+  vendors: VendorRecord[]
+  purchaseOrders: PurchaseOrderRecord[]
+  invoices: InvoiceRow[]
+  // The received-document ledger, with each document's vendor resolved by the same
+  // stage-3 resolver rather than read from a stored label.
+  ledger: SubmissionRecord[]
+}
+
+export async function loadPipelineContext(): Promise<PipelineContext> {
+  const [ruleRows, vendorRows, poRows, invoiceRows] = await Promise.all([
+    getRules(),
+    getVendors(),
+    getPurchaseOrders(),
+    getInvoices(),
+  ])
+
+  const rules = toRuleSet(Object.fromEntries(Object.entries(ruleRows).map(([key, row]) => [key, row.value])))
+  const vendors = vendorRows.map(toVendorRecord)
+
+  const ledger: SubmissionRecord[] = invoiceRows.map((row) => ({
+    id: row.id,
+    invoice_number: row.invoice_number,
+    vendor_id: resolveVendor(row.vendor_name_as_printed, vendors, rules).vendor?.id ?? null,
+    po_reference: row.po_reference,
+    invoice_date: row.invoice_date,
+    total: row.total,
+    document_type: row.document_type,
+    notes: row.notes_field,
+    file_hash: row.file_hash,
+  }))
+
+  return { rules, vendors, purchaseOrders: poRows.map(toPurchaseOrderRecord), invoices: invoiceRows, ledger }
+}
+
+// ---------------------------------------------------------------------------
+// Ingest helpers
+// ---------------------------------------------------------------------------
+
+export function pdfUrlFor(invoice: InvoiceRow): string {
+  const filename = invoice.file_path?.split('/').pop() ?? `${invoice.invoice_number}.pdf`
+  return `/invoices/${filename}`
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+// Best effort. A hash we cannot compute means the exact-duplicate check stands
+// down for this document; it must never stop the run.
+async function ensureFileHash(invoice: InvoiceRow, pdfUrl: string): Promise<string | null> {
+  if (invoice.file_hash) return invoice.file_hash
+  try {
+    const response = await fetch(pdfUrl)
+    if (!response.ok) return null
+    const hash = `sha256:${await sha256Hex(await response.arrayBuffer())}`
+    await setInvoiceFileHash(invoice.id, hash)
+    return hash
+  } catch {
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prior-run context
+// ---------------------------------------------------------------------------
+
+async function loadPriorContext(
+  context: PipelineContext,
+  invoice: InvoiceRow,
+  vendorId: string | null,
+): Promise<{ priorHashes: PriorRunHash[]; parentRun: PriorRun | null }> {
+  const runs = await getCompletedRuns()
+  const byId = new Map(context.invoices.map((row) => [row.id, row]))
+
+  const priorHashes: PriorRunHash[] = []
+  for (const run of runs) {
+    const row = run.invoice_id ? byId.get(run.invoice_id) : undefined
+    if (!row?.file_hash || row.id === invoice.id) continue
+    priorHashes.push({ run_id: run.id, invoice_number: row.invoice_number, file_hash: row.file_hash })
+  }
+
+  // The most recent prior run of this invoice number for this vendor.
+  //
+  // A parent has to have been received before its child, which is not the same as
+  // having been *processed* first: replaying the corpus on top of an earlier pass
+  // would otherwise let a resubmission become the parent of the document it
+  // amended, and the diff would read backwards.
+  const lineage = runs.filter((run) => {
+    const row = run.invoice_id ? byId.get(run.invoice_id) : undefined
+    if (!row || row.id === invoice.id) return false
+    if (row.invoice_number !== invoice.invoice_number) return false
+    if (String(row.invoice_date) > String(invoice.invoice_date)) return false
+    const rowVendor = context.ledger.find((entry) => entry.id === row.id)?.vendor_id ?? null
+    return rowVendor === vendorId
+  })
+
+  const latest = lineage[lineage.length - 1]
+  if (!latest?.invoice_id) return { priorHashes, parentRun: null }
+
+  const parentInvoice = byId.get(latest.invoice_id)
+  if (!parentInvoice) return { priorHashes, parentRun: null }
+
+  const parentExtraction = await getOrExtract(
+    parentInvoice.id,
+    pdfUrlFor(parentInvoice),
+    parentInvoice.invoice_number,
+  )
+
+  return {
+    priorHashes,
+    parentRun: {
+      run_id: latest.id,
+      invoice_number: parentInvoice.invoice_number,
+      vendor_id: vendorId,
+      verdict: latest.verdict,
+      reason_codes: (latest.reason_codes ?? []) as ReasonCode[],
+      facts: toInvoiceFacts(parentExtraction.data, parentInvoice),
+      started_at: latest.started_at,
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stage logging
+// ---------------------------------------------------------------------------
+
+export const PIPELINE_STAGES = [
+  'ingest',
+  'extract',
+  'resolve_vendor',
+  'match_po',
+  'validate',
+  'decide',
+  'explain',
+] as const
+
+export type PipelineStage = (typeof PIPELINE_STAGES)[number]
+
+export interface StageEvent {
+  stage: PipelineStage
+  order: number
+  status: StageLogStatus
+  durationMs: number
+  reasoning: string
+}
+
+interface StageOutcome<T> {
+  value: T
+  output: Json
+  reasoning: string
+  flagged?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// runInvoice
+// ---------------------------------------------------------------------------
+
+export interface RunInvoiceOptions {
+  // The clock the date rules read. Defaults to now; tests and replays pass a fixed
+  // date so a run is reproducible.
+  asOf?: Date
+  // Pre-fetched shared context, so a batch does not re-read the master data per
+  // invoice.
+  context?: PipelineContext
+  // Force a fresh extraction instead of reading the cache.
+  force?: boolean
+  // Stage 7 calls a model. Off, the run still completes on the deterministic
+  // reason-code summary — the explanation is presentational either way.
+  explain?: boolean
+  onStage?: (event: StageEvent) => void
+}
+
+export interface RunOutcome {
+  run: RunRow
+  invoice: InvoiceRow
+  verdict: Verdict
+  reasonCodes: ReasonCode[]
+  matchedPo: string | null
+  explanation: string
+  explanationSource: 'model' | 'fallback'
+  checks: ValidationReport
+  facts: InvoiceFacts
+}
+
+export async function runInvoice(invoiceId: string, options: RunInvoiceOptions = {}): Promise<RunOutcome> {
+  const asOf = options.asOf ?? new Date()
+  const context = options.context ?? (await loadPipelineContext())
+
+  const invoice = await getInvoiceById(invoiceId)
+  if (!invoice) throw new Error(`No invoice with id ${invoiceId}`)
+
+  const run = await createRun(invoice.id)
+  let currentStage: PipelineStage = 'ingest'
+
+  const runStage = async <T>(
+    stage: PipelineStage,
+    input: Json,
+    execute: () => Promise<StageOutcome<T>> | StageOutcome<T>,
+  ): Promise<T> => {
+    currentStage = stage
+    const order = PIPELINE_STAGES.indexOf(stage) + 1
+    const log = await logStage(run.id, stage, order, 'running', { input })
+    const startedAt = performance.now()
+
+    try {
+      const outcome = await execute()
+      const durationMs = Math.round(performance.now() - startedAt)
+      const status: StageLogStatus = outcome.flagged ? 'flagged' : 'passed'
+      await updateStageLog(log.id, {
+        status,
+        output: outcome.output,
+        reasoning: outcome.reasoning,
+        duration_ms: durationMs,
+      })
+      options.onStage?.({ stage, order, status, durationMs, reasoning: outcome.reasoning })
+      return outcome.value
+    } catch (error) {
+      const durationMs = Math.round(performance.now() - startedAt)
+      const message = error instanceof Error ? error.message : String(error)
+      await updateStageLog(log.id, { status: 'failed', reasoning: message, duration_ms: durationMs })
+      options.onStage?.({ stage, order, status: 'failed', durationMs, reasoning: message })
+      throw error
+    }
+  }
+
+  try {
+    // Stage 1 — ingest. Locates the document and records its content hash.
+    const ingested = await runStage('ingest', { invoice_id: invoice.id, file_path: invoice.file_path }, async () => {
+      const pdfUrl = pdfUrlFor(invoice)
+      const fileHash = await ensureFileHash(invoice, pdfUrl)
+      return {
+        value: { pdfUrl, fileHash },
+        output: { pdf_url: pdfUrl, file_hash: fileHash } as Json,
+        reasoning: fileHash
+          ? 'Document located and content-hashed.'
+          : 'Document located; content hash unavailable, so the exact-duplicate check will stand down.',
+        flagged: !fileHash,
+      }
+    })
+
+    // Stage 2 — extract. Reads through the cache; a cached extraction is not a
+    // model call.
+    const extraction = await runStage('extract', { pdf_url: ingested.pdfUrl }, async () => {
+      const cached = await getOrExtract(invoice.id, ingested.pdfUrl, invoice.invoice_number, { force: options.force })
+      return {
+        value: cached,
+        output: cached.data as unknown as Json,
+        reasoning: cached.fromCache
+          ? `Read from the extraction cache (${cached.model}); no model call made.`
+          : `Extracted with ${cached.model} in ${cached.duration_ms ?? 0}ms.`,
+      }
+    })
+
+    const facts = toInvoiceFacts(extraction.data, { ...invoice, file_hash: ingested.fileHash })
+
+    // Stage 3 — resolve vendor.
+    const vendorMatch = await runStage('resolve_vendor', { printed_name: facts.vendor_name }, () => {
+      const match = resolveVendor(facts.vendor_name, context.vendors, context.rules)
+      return {
+        value: match,
+        output: {
+          vendor_id: match.vendor?.id ?? null,
+          score: match.score,
+          status: match.status,
+          matched_on: match.matched_on,
+          matched_value: match.matched_value,
+          normalized_input: match.normalized_input,
+          runners_up: match.runners_up,
+        } as unknown as Json,
+        reasoning: match.vendor
+          ? `Resolved to ${match.vendor.legal_name} at ${match.score.toFixed(3)} (${match.status}).`
+          : `No vendor scored above the floor; best was ${match.score.toFixed(3)}.`,
+        flagged: match.status !== 'matched',
+      }
+    })
+
+    const { priorHashes, parentRun } = await loadPriorContext(context, invoice, vendorMatch.vendor?.id ?? null)
+
+    // Stage 4 — match PO.
+    const vendorPos = vendorMatch.vendor
+      ? context.purchaseOrders.filter((po) => po.vendor_id === vendorMatch.vendor?.id)
+      : []
+
+    const poMatch = await runStage(
+      'match_po',
+      { po_reference: facts.po_reference, candidate_pos: vendorPos.map((po) => po.po_number) } as Json,
+      () => {
+        const match = matchPurchaseOrder(facts, vendorPos, context.rules)
+        return {
+          value: match,
+          output: {
+            outcome: match.outcome,
+            method: match.method,
+            score: match.score,
+            matched_po: match.matched?.po_number ?? null,
+            candidates: match.candidates.map((po) => po.po_number),
+            breakdown: match.breakdown,
+          } as unknown as Json,
+          reasoning:
+            match.outcome === 'explicit'
+              ? `Document cites ${match.matched?.po_number}, which belongs to this vendor.`
+              : match.outcome === 'ambiguous'
+                ? `No usable reference; ${match.candidates.length} orders sit within the ambiguity margin, so none was chosen.`
+                : match.outcome === 'inferred'
+                  ? `No usable reference; ${match.candidates[0]?.po_number} is the closest fit but is a suggestion, not a match.`
+                  : 'No usable reference and no credible candidate.',
+          flagged: match.outcome !== 'explicit',
+        }
+      },
+    )
+
+    // Stage 5 — validate.
+    const checks = await runStage('validate', { po_number: poMatch.matched?.po_number ?? null } as Json, () => {
+      const report = runValidations({
+        facts,
+        vendorMatch,
+        poMatch,
+        rules: context.rules,
+        asOf,
+        submissionId: invoice.id,
+        submissions: context.ledger,
+        priorHashes,
+        parentRun,
+      })
+
+      const failures = Object.entries(report)
+        .filter(([, value]) => value !== null && typeof value === 'object' && 'passed' in value && !value.passed)
+        .map(([name]) => name)
+
+      return {
+        value: report,
+        output: report as unknown as Json,
+        reasoning:
+          failures.length === 0
+            ? `Every check passed; ${skippedChecks(report).length} stood down as not applicable.`
+            : `Failed: ${failures.join(', ')}.`,
+        flagged: failures.length > 0,
+      }
+    })
+
+    // Stage 6 — decide.
+    const decision = await runStage('decide', { reason_codes_in: [] } as Json, () => {
+      const result = decide({ facts, vendorMatch, poMatch, checks, rules: context.rules })
+      return {
+        value: result,
+        output: {
+          verdict: result.verdict,
+          primary: result.primary,
+          matched_rule: result.matched_rule,
+          reason_codes: result.reason_codes,
+          reevaluated: result.reevaluated,
+          evidence: result.evidence,
+        } as Json,
+        reasoning: `Rule ${result.matched_rule} matched first (${result.primary}) → ${result.verdict}.`,
+        flagged: result.verdict !== 'AUTO_APPROVE',
+      }
+    })
+
+    const explainRequest: ExplainDecisionRequest = {
+      verdict: decision.verdict,
+      reason_codes: decision.reason_codes,
+      evidence: decision.evidence,
+      summary: {
+        invoice_number: facts.invoice_number,
+        vendor_name: vendorMatch.vendor?.legal_name ?? facts.vendor_name,
+        total: facts.total,
+        currency: facts.currency,
+        matched_po: poMatch.matched?.po_number ?? null,
+      },
+    }
+
+    // Stage 7 — explain. Presentational: a failure here never changes or blocks a
+    // verdict.
+    type ExplanationOutcome = { explanation: string; source: 'model' | 'fallback' }
+    const explained = await runStage<ExplanationOutcome>('explain', explainRequest as unknown as Json, async () => {
+      const fallback = fallbackExplanation(explainRequest)
+      if (options.explain === false) {
+        return {
+          value: { explanation: fallback, source: 'fallback' },
+          output: { explanation: fallback, source: 'fallback' } as Json,
+          reasoning: 'Explanation requested from the deterministic summary; no model call made.',
+        }
+      }
+
+      try {
+        const { data, error } = await supabase.functions.invoke<ExplainDecisionResponse>('explain-decision', {
+          body: explainRequest,
+        })
+        if (error) throw error
+        if (!data || !data.ok) throw new Error(data?.ok === false ? data.error : 'explain-decision returned no data')
+
+        return {
+          value: { explanation: data.explanation, source: 'model' },
+          output: { explanation: data.explanation, model: data.model, provider: data.provider } as Json,
+          reasoning: `Phrased by ${data.provider}:${data.model} in ${data.duration_ms}ms.`,
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return {
+          value: { explanation: fallback, source: 'fallback' },
+          output: { explanation: fallback, source: 'fallback', error: message } as Json,
+          reasoning: `Model phrasing unavailable (${message}); fell back to the deterministic summary. The verdict is unaffected.`,
+          flagged: true,
+        }
+      }
+    })
+
+    const finished = await updateRun(run.id, {
+      status: 'complete',
+      verdict: decision.verdict,
+      reason_codes: decision.reason_codes,
+      matched_po: poMatch.matched?.po_number ?? null,
+      parent_run_id: checks.resubmission?.parent_run_id ?? null,
+      changed_fields: (checks.resubmission?.changed_fields ?? null) as Json,
+      explanation: explained.explanation,
+      finished_at: new Date().toISOString(),
+    })
+
+    return {
+      run: finished,
+      invoice,
+      verdict: decision.verdict,
+      reasonCodes: decision.reason_codes,
+      matchedPo: poMatch.matched?.po_number ?? null,
+      explanation: explained.explanation,
+      explanationSource: explained.source,
+      checks,
+      facts,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    // Never leave a run stuck in `running`.
+    await updateRun(run.id, {
+      status: 'failed',
+      explanation: `Stage "${currentStage}" threw: ${message}`,
+      finished_at: new Date().toISOString(),
+    }).catch(() => undefined)
+    throw error
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Batch
+// ---------------------------------------------------------------------------
+
+export interface BatchResult {
+  invoice: InvoiceRow
+  verdict: Verdict | null
+  reasonCodes: ReasonCode[]
+  matchedPo: string | null
+  explanation: string | null
+  error: string | null
+}
+
+/**
+ * Runs every invoice in receipt order.
+ *
+ * Order matters: a resubmission has to see its parent, and a near-duplicate has to
+ * see the invoice it duplicates. Sorting by invoice date replays the order the
+ * documents actually arrived in.
+ */
+export async function runAllInvoices(
+  options: RunInvoiceOptions & { onProgress?: (done: number, total: number) => void } = {},
+): Promise<BatchResult[]> {
+  const context = options.context ?? (await loadPipelineContext())
+  const ordered = [...context.invoices].sort((a, b) => {
+    const byDate = String(a.invoice_date).localeCompare(String(b.invoice_date))
+    return byDate !== 0 ? byDate : a.invoice_number.localeCompare(b.invoice_number)
+  })
+
+  const results: BatchResult[] = []
+  for (const [index, invoice] of ordered.entries()) {
+    try {
+      const outcome = await runInvoice(invoice.id, { ...options, context })
+      results.push({
+        invoice,
+        verdict: outcome.verdict,
+        reasonCodes: outcome.reasonCodes,
+        matchedPo: outcome.matchedPo,
+        explanation: outcome.explanation,
+        error: null,
+      })
+    } catch (error) {
+      results.push({
+        invoice,
+        verdict: null,
+        reasonCodes: [],
+        matchedPo: null,
+        explanation: null,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    options.onProgress?.(index + 1, ordered.length)
+  }
+
+  return results
+}

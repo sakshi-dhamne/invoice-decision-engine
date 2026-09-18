@@ -18,3 +18,10 @@ export class ProviderError extends Error {
 export interface ExtractionProvider {
   extract(pdfBase64: string, prompt: string): Promise<ExtractionResult>
 }
+
+// A plain text completion. Stage 7 turns a settled verdict into a sentence; it
+// needs no schema, no tool and no document, so it is its own small contract rather
+// than a variant of the extraction one.
+export interface TextProvider {
+  complete(prompt: string): Promise<string>
+}
