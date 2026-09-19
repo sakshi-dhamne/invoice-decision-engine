@@ -298,9 +298,20 @@ export function toIsoDate(date: Date): string {
  * before any tolerance comparison, and the rate comes from the invoice itself
  * rather than being assumed.
  *
- * The net basis is the printed subtotal, or the sum of line amounts when the
- * document prints no subtotal (a tax-inclusive layout). When neither is usable the
- * factor is 1 and the lines are already gross.
+ * The net basis is the figure the lines were actually printed against, which is
+ * not always the subtotal. A layout that carries a per-line tax column prints the
+ * tax-inclusive figure alongside the taxable one, and a line read from that column
+ * is already on the total's basis — scaling it by total / subtotal would charge the
+ * tax a second time. So the basis is chosen by where the lines sit: the printed
+ * subtotal when they sum nearer to it, their own sum when they sum nearer to the
+ * total. A tie goes to the subtotal, and a document that prints no subtotal falls
+ * back to the line sum as before. When neither is usable the factor is 1 and the
+ * lines are already gross.
+ *
+ * Choosing by proximity rather than trusting the subtotal outright keeps the
+ * property that made the subtotal the default: lines that fall short of the
+ * subtotal because one of them was never read stay on the subtotal's basis, so the
+ * shortfall surfaces as an unaccounted order line instead of being scaled away.
  */
 export function grossFactor(
   total: number | null | undefined,
@@ -309,7 +320,11 @@ export function grossFactor(
 ): number {
   if (!isFiniteNumber(total) || total === 0) return 1
 
-  const netBasis = isFiniteNumber(subtotal) && subtotal !== 0 ? subtotal : sum(lineAmounts.filter(isFiniteNumber))
+  const lineSum = sum(lineAmounts.filter(isFiniteNumber))
+  const subtotalUsable = isFiniteNumber(subtotal) && subtotal !== 0
+  const linesAreGross = subtotalUsable && Math.abs(lineSum - total) < Math.abs(lineSum - subtotal)
+
+  const netBasis = subtotalUsable && !linesAreGross ? subtotal : lineSum
 
   if (!isFiniteNumber(netBasis) || netBasis === 0) return 1
 

@@ -5,7 +5,7 @@
     "total_amount": 118000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-10",
     "line_items": [
@@ -18,7 +18,7 @@
     "total_amount": 850000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-01",
     "line_items": [
@@ -47,7 +47,7 @@
     "total_amount": 98000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-14",
     "line_items": [
@@ -60,7 +60,7 @@
     "total_amount": 145200,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-05",
     "line_items": [
@@ -74,7 +74,7 @@
     "total_amount": 64800,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-15",
     "line_items": [
@@ -101,7 +101,7 @@
     "total_amount": 184500,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-18",
     "line_items": [
@@ -115,7 +115,7 @@
     "total_amount": 166000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-19",
     "line_items": [
@@ -128,7 +128,7 @@
     "total_amount": 226000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-03",
     "line_items": [
@@ -141,7 +141,7 @@
     "total_amount": 64500,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-16",
     "line_items": [
@@ -154,7 +154,7 @@
     "total_amount": 110000,
     "currency": "INR",
     "amount_billed_to_date": 110000,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "closed",
     "issued_date": "2026-06-20",
     "line_items": [
@@ -167,7 +167,7 @@
     "total_amount": 975000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-08-01",
     "line_items": [
@@ -193,7 +193,7 @@
     "total_amount": 480000,
     "currency": "INR",
     "amount_billed_to_date": 0,
-    "tax_treatment": "exclusive",
+    "tax_treatment": "inclusive",
     "status": "open",
     "issued_date": "2026-07-15",
     "line_items": [

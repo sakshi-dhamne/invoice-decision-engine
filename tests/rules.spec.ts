@@ -27,6 +27,8 @@ import {
   grossFactor,
   normalizeAccountNumber,
   normalizeCompanyName,
+  roundTo,
+  sum,
   toleranceFor,
 } from '../src/rules/normalize.ts'
 import { matchPurchaseOrder, remainingBalance } from '../src/rules/poMatch.ts'
@@ -87,6 +89,37 @@ describe('the 27-invoice corpus', () => {
       expect(outcome.decision.reason_codes.length, id).toBeGreaterThan(0)
       expect(outcome.decision.primary, id).toBe(outcome.decision.reason_codes[0])
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fixture coherence
+// ---------------------------------------------------------------------------
+
+// A purchase order's `total_amount` is the sum AP is authorised to pay out, so its
+// line amounts are on that same gross basis. `tax_treatment` has to agree with the
+// figures the order actually states, or the corpus asserts one thing and means
+// another — and a reader debugging a variance is sent after a tax gap that is not
+// there.
+describe('purchase-order fixtures state a coherent tax basis', () => {
+  it('every order states line amounts that sum to its authorised total', () => {
+    for (const po of purchaseOrders) {
+      const lineTotal = roundTo(sum(po.line_items.map((line) => line.amount ?? 0)), 2)
+      expect(lineTotal, po.po_number).toBe(po.total_amount)
+    }
+  })
+
+  it('an order priced exclusive of tax is only billed by invoices that carry none', () => {
+    const treatmentOf = new Map(purchaseOrders.map((po) => [po.po_number, po.tax_treatment]))
+    for (const document of corpus) {
+      const reference = document.facts.po_reference
+      if (reference == null || treatmentOf.get(reference) !== 'exclusive') continue
+      expect(document.facts.tax ?? 0, document.id).toBe(0)
+    }
+  })
+
+  it('keeps both treatments represented, so neither branch of the check is dead', () => {
+    expect(new Set(purchaseOrders.map((po) => po.tax_treatment))).toEqual(new Set(['inclusive', 'exclusive']))
   })
 })
 
@@ -362,6 +395,19 @@ describe('decision table coverage', () => {
     expect(decision.primary).toBe('PRICE_VARIANCE')
   })
 
+  it('rule 17 stands down when the line was read from a tax-inclusive column', () => {
+    // Same document as the clean case, but the line amount transcribed from a
+    // layout's tax-inclusive column rather than its taxable-value column. It is
+    // already on the order's basis, so there is no variance to report.
+    const decision = decideSynthetic(
+      syntheticInvoice({
+        line_items: [{ description: 'Recycled Kraft Paper Reels', quantity: 20, unit_price: 7080, amount: 141600 }],
+      }),
+    ).decision
+    expect(decision.verdict).toBe('AUTO_APPROVE')
+    expect(decision.primary).toBe('CLEAN_MATCH')
+  })
+
   it('rule 18 — a line the order does not account for reviews', () => {
     const decision = decideSynthetic(
       syntheticInvoice({
@@ -454,6 +500,19 @@ describe('normalize', () => {
     // No subtotal printed — falls back to the line amounts.
     expect(grossFactor(226000, null, [191525])).toBeCloseTo(226000 / 191525, 10)
     expect(grossFactor(null, null, [])).toBe(1)
+  })
+
+  it('scales lines from the figure they were printed against, not always the subtotal', () => {
+    // A layout that carries a per-line tax column prints the tax-inclusive figure
+    // beside the taxable one. Lines taken from that column already sum to the
+    // total, and scaling them by total / subtotal would charge the tax twice.
+    expect(grossFactor(64800, 54915, [64800])).toBe(1)
+    // Lines that fall short of the subtotal because one of them was never read
+    // stay on the subtotal's basis, so the shortfall is left for the coverage
+    // check to report rather than being scaled away.
+    expect(grossFactor(118000, 100000, [60000])).toBeCloseTo(1.18, 10)
+    // A tie goes to the subtotal.
+    expect(grossFactor(200000, 100000, [150000])).toBeCloseTo(2, 10)
   })
 
   it('tolerance takes the greater of the percentage and the floor', () => {
@@ -590,15 +649,22 @@ describe('stage 5 — individual checks', () => {
   })
 
   it('tax treatment is unresolvable when a tax-exclusive order meets an invoice that states no tax', () => {
-    const result = checkTaxTreatment(syntheticInvoice({ tax: null, subtotal: null }), syntheticPo())
+    const exclusivePo = syntheticPo({ tax_treatment: 'exclusive' })
+    const result = checkTaxTreatment(syntheticInvoice({ tax: null, subtotal: null }), exclusivePo)
     expect(result.passed).toBe(false)
     expect(result.code).toBe('TAX_TREATMENT_UNCLEAR')
 
     const declared = checkTaxTreatment(
       syntheticInvoice({ tax: null, subtotal: null, fields_not_printed: ['subtotal', 'tax'] }),
-      syntheticPo(),
+      exclusivePo,
     )
     expect(declared.passed).toBe(true)
+  })
+
+  it('tax treatment is unresolvable when a tax-inclusive order meets a tax line with no subtotal', () => {
+    const result = checkTaxTreatment(syntheticInvoice({ subtotal: null }), syntheticPo())
+    expect(result.passed).toBe(false)
+    expect(result.code).toBe('TAX_TREATMENT_UNCLEAR')
   })
 
   it('the invoice date check is relative to the supplied clock, not the system clock', () => {
