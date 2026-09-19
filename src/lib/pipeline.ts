@@ -89,16 +89,30 @@ export function toPurchaseOrderRecord(row: PurchaseOrderRow): PurchaseOrderRecor
  * `fields_not_printed` is the union of what the document is known not to print and
  * what the model reported it could not read. Both mean the same thing to a rule: a
  * null there is an absence, not a wrong value.
+ *
+ * A value arriving for one of those fields is therefore self-contradictory: the
+ * document has no such figure to transcribe, or the model has just said it could
+ * not read the one that is there. Either way what came back is something the model
+ * worked out, not something the vendor printed, and this is where it stops. Every
+ * downstream check reads the stated figure — the total above all, since that is
+ * what the vendor is asking to be paid — so an absence is carried through as a
+ * null and left for `INCOMPLETE_EXTRACTION` to report. A computed figure allowed
+ * through here would not merely be wrong; seated in place of the stated total it
+ * would agree with its own inputs and silently disarm the arithmetic check.
  */
 export function toInvoiceFacts(extraction: ExtractionResult, invoice: InvoiceRow): InvoiceFacts {
   const notPrinted = new Set<string>([...(invoice.fields_not_printed ?? []), ...(extraction.unreadable_fields ?? [])])
 
+  // Null for a field the document does not print or the model could not read,
+  // whatever value came back alongside that declaration.
+  const asStated = <T>(field: string, value: T): T | null => (notPrinted.has(field) ? null : value)
+
   return {
-    invoice_number: extraction.invoice_number,
-    invoice_date: extraction.invoice_date,
-    vendor_name: extraction.vendor_name,
-    po_reference: extraction.po_reference,
-    currency: extraction.currency,
+    invoice_number: asStated('invoice_number', extraction.invoice_number),
+    invoice_date: asStated('invoice_date', extraction.invoice_date),
+    vendor_name: asStated('vendor_name', extraction.vendor_name),
+    po_reference: asStated('po_reference', extraction.po_reference),
+    currency: asStated('currency', extraction.currency),
     line_items: (extraction.line_items ?? []).map(
       (line): LineItemFact => ({
         description: line.description ?? null,
@@ -107,13 +121,13 @@ export function toInvoiceFacts(extraction: ExtractionResult, invoice: InvoiceRow
         amount: line.amount ?? null,
       }),
     ),
-    subtotal: extraction.subtotal,
-    tax: extraction.tax,
-    total: extraction.total,
-    bank_account: extraction.bank_account,
-    remit_to_name: extraction.remit_to_name,
+    subtotal: asStated('subtotal', extraction.subtotal),
+    tax: asStated('tax', extraction.tax),
+    total: asStated('total', extraction.total),
+    bank_account: asStated('bank_account', extraction.bank_account),
+    remit_to_name: asStated('remit_to_name', extraction.remit_to_name),
     document_type: extraction.document_type,
-    notes: extraction.notes,
+    notes: asStated('notes', extraction.notes),
     file_hash: invoice.file_hash,
     fields_not_printed: [...notPrinted],
   }
