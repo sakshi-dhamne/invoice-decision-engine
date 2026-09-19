@@ -1,8 +1,9 @@
-# invoice-decision-engine
+# Clearline
 
 An accounts-payable decision engine: a vendor invoice goes in, a reasoned verdict
 comes out — `AUTO_APPROVE`, `REVIEW`, `HOLD`, `BLOCK` or `ROUTED_NOT_PAID` — with
-the evidence behind it.
+the evidence behind it. The product is called Clearline; `invoice-decision-engine`
+is only the repository name.
 
 **The model extracts and phrases. Deterministic code decides.** A model reads the
 PDF (stage 2) and, once a verdict is settled, turns it into a sentence (stage 7).
@@ -53,18 +54,36 @@ one throws rather than defaulting. `002_seed.sql` seeds ten,
 threshold, arithmetic allowance, near-duplicate amount band, split-pattern
 uniformity ceiling).
 
+## Screens
+
+| Route | What it is |
+|---|---|
+| `/` | Needs you. The queue of invoices waiting on a person, a proportion bar at true scale, and the first-visit explainer |
+| `/runs/:id` | The seven stages lighting up as they execute, over Supabase Realtime |
+| `/decisions/:id` | The verdict, its explanation, the evidence, the order, and the trail |
+| `/vendors/new?from=:runId` | Onboarding a vendor an invoice was held for |
+| `/rules` | The thresholds, and the order the checks run in |
+| `/dashboard` | Every run, filterable, with the figures across the top |
+| `/harness` | The development harness. Not part of the product, and unchanged |
+
+Every sentence a user reads about a verdict or a reason code comes from
+`src/lib/reasonCopy.ts`. Nothing else carries phrasing for them. Colour is defined
+once in `src/index.css` and only ever means a verdict.
+
 ## Running it
 
 
 ```bash
 npm install
-npm run dev        # /harness runs extraction and the pipeline over all 27 fixtures
+npm run dev        # the product at /, the extraction harness at /harness
 npm test           # the rules engine, offline — no network, no database
 npm run build
 npm run lint
 ```
 
 Database setup: run `supabase/migrations/001…005` in order in the Supabase SQL
-editor. The edge functions in `supabase/functions/` are deployed by hand and read
-`GEMINI_API_KEY` / `ANTHROPIC_API_KEY` from the function environment, so no key
-ever reaches the browser.
+editor, then `007_storage.sql` (the bucket uploaded PDFs go to) and
+`008_product_columns.sql` (three columns the screens need). The edge functions in
+`supabase/functions/` are deployed by hand and read `GEMINI_API_KEY` /
+`ANTHROPIC_API_KEY` from the function environment, so no key ever reaches the
+browser.

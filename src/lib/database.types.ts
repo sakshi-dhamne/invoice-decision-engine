@@ -8,6 +8,9 @@ export type VendorRow = {
   aliases: string[] | null
   bank_account: string | null
   bank_ifsc: string | null
+  // Who confirmed the account above, and how. Recorded when a vendor is onboarded
+  // so the payment details are not just numbers somebody typed.
+  bank_confirmed_by: string | null
   gstin: string | null
   address: string | null
   email_domain: string | null
@@ -42,6 +45,10 @@ export type InvoiceRow = {
   id: string
   invoice_number: string
   file_path: string | null
+  // Set when the document was uploaded through the product rather than seeded.
+  // The extraction client reads from Storage when this is present and from
+  // public/invoices otherwise.
+  storage_path: string | null
   file_hash: string | null
   vendor_name_as_printed: string | null
   vendor_id: string | null
@@ -94,6 +101,8 @@ export type RunRow = {
   started_at: string
   finished_at: string | null
   touched_by_human: boolean
+  // Who overrode the verdict, when someone did.
+  touched_by: string | null
 }
 
 export type RunInsert = Partial<RunRow>

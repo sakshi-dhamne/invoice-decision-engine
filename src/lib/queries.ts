@@ -10,6 +10,7 @@ import type {
   StageLogRow,
   StageLogStatus,
   Verdict,
+  VendorInsert,
   VendorRow,
 } from './database.types.ts'
 
@@ -204,4 +205,73 @@ export async function getAssumptions(): Promise<AssumptionRow[]> {
 export async function resetDemoData(): Promise<void> {
   const { error } = await supabase.from('runs').delete().not('id', 'is', null)
   if (error) throw error
+}
+
+// ---------------------------------------------------------------------------
+// Product screens
+// ---------------------------------------------------------------------------
+
+// The latest run per invoice, which is what every screen outside the live view
+// shows. An invoice re-run after onboarding has two runs; the queue should show
+// where it stands now, not where it started.
+export async function getLatestRuns(): Promise<RunRow[]> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('*')
+    .order('started_at', { ascending: false })
+  if (error) throw error
+
+  const seen = new Set<string>()
+  const latest: RunRow[] = []
+  for (const run of data) {
+    const key = run.invoice_id ?? run.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    latest.push(run)
+  }
+  return latest
+}
+
+export async function getRunById(id: string): Promise<RunRow | null> {
+  const { data, error } = await supabase.from('runs').select('*').eq('id', id).maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function getStageLogs(runId: string): Promise<StageLogRow[]> {
+  const { data, error } = await supabase
+    .from('stage_logs')
+    .select('*')
+    .eq('run_id', runId)
+    .order('stage_order')
+  if (error) throw error
+  return data
+}
+
+// Records that a person overrode the verdict, and who they were. The original
+// verdict and its reason codes stay exactly as the rules left them: the override
+// is an additional fact about the run, not a rewrite of what was decided.
+export async function recordOverride(runId: string, who: string): Promise<RunRow> {
+  const { data, error } = await supabase
+    .from('runs')
+    .update({ touched_by_human: true, touched_by: who })
+    .eq('id', runId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function createVendor(vendor: VendorInsert): Promise<VendorRow> {
+  const { data, error } = await supabase.from('vendors').insert(vendor).select('*').single()
+  if (error) throw error
+  return data
+}
+
+// Invoices that have never completed a run. "Fetch new invoices" works through
+// these and nothing else, so pressing it twice does not re-run the whole corpus.
+export async function getInvoicesWithoutCompletedRun(): Promise<InvoiceRow[]> {
+  const [invoices, runs] = await Promise.all([getInvoices(), getCompletedRuns()])
+  const decided = new Set(runs.map((run) => run.invoice_id).filter((id): id is string => id !== null))
+  return invoices.filter((invoice) => !decided.has(invoice.id))
 }

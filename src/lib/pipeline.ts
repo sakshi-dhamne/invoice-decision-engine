@@ -11,6 +11,7 @@
 // the stage named, and nothing is left stuck in `running`.
 
 import { getOrExtract } from './extraction.ts'
+import { describeUploadedInvoice, UPLOAD_BUCKET } from './uploads.ts'
 import type { ExtractionResult } from './extractionSchema.ts'
 import { supabase } from './supabase.ts'
 import {
@@ -177,7 +178,17 @@ export async function loadPipelineContext(): Promise<PipelineContext> {
 // Ingest helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Where this document's PDF can be fetched from.
+ *
+ * An uploaded document lives in the Storage bucket and carries the key that finds
+ * it. A seeded fixture has no key and is served from public/invoices. Everything
+ * downstream takes the URL and never learns which kind it was.
+ */
 export function pdfUrlFor(invoice: InvoiceRow): string {
+  if (invoice.storage_path) {
+    return supabase.storage.from(UPLOAD_BUCKET).getPublicUrl(invoice.storage_path).data.publicUrl
+  }
   const filename = invoice.file_path?.split('/').pop() ?? `${invoice.invoice_number}.pdf`
   return `/invoices/${filename}`
 }
@@ -310,6 +321,9 @@ export interface RunInvoiceOptions {
   // reason-code summary — the explanation is presentational either way.
   explain?: boolean
   onStage?: (event: StageEvent) => void
+  // Fires as soon as the run row exists, before stage 1 executes. The upload flow
+  // uses it to send the person to the live view and watch the rest happen.
+  onRunCreated?: (run: RunRow) => void
 }
 
 export interface RunOutcome {
@@ -332,6 +346,7 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
   if (!invoice) throw new Error(`No invoice with id ${invoiceId}`)
 
   const run = await createRun(invoice.id)
+  options.onRunCreated?.(run)
   let currentStage: PipelineStage = 'ingest'
 
   const runStage = async <T>(
@@ -394,6 +409,28 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
     })
 
     const facts = toInvoiceFacts(extraction.data, { ...invoice, file_hash: ingested.fileHash })
+
+    // An uploaded document opened its row before anything had read it, so the row
+    // still carries a placeholder number and no figures. Stage 2 is the first thing
+    // that knows what the page says, so bring the row up to date from it. These
+    // columns are for display and for the cross-invoice ledger; the rules go on
+    // deciding from the extraction itself, never from what is written back here.
+    if (invoice.storage_path) {
+      await describeUploadedInvoice(invoice.id, {
+        invoice_number: facts.invoice_number ?? invoice.invoice_number,
+        vendor_name_as_printed: facts.vendor_name,
+        po_reference: facts.po_reference,
+        invoice_date: facts.invoice_date,
+        currency: facts.currency,
+        subtotal: facts.subtotal,
+        tax: facts.tax,
+        total: facts.total,
+        bank_account_printed: facts.bank_account,
+        remit_to_name: facts.remit_to_name,
+        document_type: facts.document_type,
+        notes_field: facts.notes,
+      }).catch(() => undefined)
+    }
 
     // Stage 3 — resolve vendor.
     const vendorMatch = await runStage('resolve_vendor', { printed_name: facts.vendor_name }, () => {
