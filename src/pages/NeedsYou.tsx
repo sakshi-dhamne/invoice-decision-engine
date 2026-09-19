@@ -1,28 +1,39 @@
-// Landing. What is waiting on a person, and nothing else.
+// The queue, and the invoice you are looking at, side by side.
+//
+// A finance manager works a list. Choosing a row changes the pane on the right and
+// nothing else: no navigation, no scroll position lost, no wait. The selection is
+// in the URL so it can be linked and the back button does what it should.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
+import { DecisionDetail, type DecisionDetailHandle } from '@/components/DecisionDetail.tsx'
 import { Explainer } from '@/components/Explainer.tsx'
 import { ProportionBar } from '@/components/ProportionBar.tsx'
-import { EmptyState, ErrorNote, Loading, Panel, Spinner, VerdictChip } from '@/components/Primitives.tsx'
+import { EmptyState, ErrorNote, Loading, Spinner, VerdictChip } from '@/components/Primitives.tsx'
 import { useUpload } from '@/components/uploadContext.ts'
 import { Button } from '@/components/ui/button'
-import { count, money, waitingFor } from '@/lib/format.ts'
+import { cn } from '@/lib/utils'
+import { count, money, waitingSince } from '@/lib/format.ts'
 import { countByVerdict, loadFeed, matchesSearch, needsAPerson, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
 import { dismissExplainer, explainerDismissed } from '@/lib/localSettings.ts'
 import { runInvoice } from '@/lib/pipeline.ts'
 import { getInvoicesWithoutCompletedRun } from '@/lib/queries.ts'
-import { reasonSentence } from '@/lib/reasonCopy.ts'
 
 export default function NeedsYou() {
   const [rows, setRows] = useState<FeedRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [showExplainer, setShowExplainer] = useState(() => !explainerDismissed())
+  const [explainerOpen, setExplainerOpen] = useState(() => !explainerDismissed())
   const [fetching, setFetching] = useState<string | null>(null)
-  const { openUpload } = useUpload()
+  const [params, setParams] = useSearchParams()
+  const { openUpload, finishedAt } = useUpload()
+  const detail = useRef<DecisionDetailHandle | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+
+  const selectedNumber = params.get('invoice')
 
   const load = useCallback(async () => {
     try {
@@ -36,7 +47,7 @@ export default function NeedsYou() {
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, finishedAt])
 
   const queue = useMemo(
     () => (rows ?? []).filter((row) => needsAPerson(row.run) && matchesSearch(row, search)),
@@ -46,21 +57,68 @@ export default function NeedsYou() {
   const counts = useMemo(() => countByVerdict(rows ?? []), [rows])
   const decided = (rows ?? []).filter((row) => row.run.status === 'complete')
   const cleared = decided.filter((row) => row.run.verdict === 'AUTO_APPROVE').length
-  const valueProcessed = decided.reduce((sum, row) => sum + (row.invoice?.total ?? 0), 0)
 
-  // Runs any seeded invoice that has never reached a verdict. Pressing it again
-  // once everything is decided does nothing, which is what the count reports.
+  const selectedIndex = queue.findIndex((row) => row.invoice?.invoice_number === selectedNumber)
+  const selected = selectedIndex >= 0 ? queue[selectedIndex] : null
+
+  const select = useCallback(
+    (row: FeedRow | null) => {
+      const next = new URLSearchParams(params)
+      if (row?.invoice?.invoice_number) next.set('invoice', row.invoice.invoice_number)
+      else next.delete('invoice')
+      setParams(next, { replace: false })
+    },
+    [params, setParams],
+  )
+
+  // Working the queue from the keyboard. Ignored while the reader is typing into
+  // something, so a search box does not swallow the shortcuts and vice versa.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable === true
+      if (typing || event.metaKey || event.ctrlKey || event.altKey) return
+      if (queue.length === 0) return
+
+      if (event.key === 'j' || event.key === 'k') {
+        event.preventDefault()
+        const step = event.key === 'j' ? 1 : -1
+        const from = selectedIndex < 0 ? (step === 1 ? -1 : queue.length) : selectedIndex
+        const next = Math.min(queue.length - 1, Math.max(0, from + step))
+        select(queue[next])
+        listRef.current?.querySelectorAll('li')[next]?.scrollIntoView({ block: 'nearest' })
+        return
+      }
+
+      if (event.key === 'Enter' && selected) {
+        event.preventDefault()
+        detail.current?.openDocument()
+        return
+      }
+
+      if (event.key === 'a' && selected) {
+        event.preventDefault()
+        detail.current?.approve()
+        return
+      }
+
+      if (event.key === 'Escape') {
+        select(null)
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [queue, selectedIndex, selected, select])
+
   const fetchNew = async () => {
-    setFetching('Looking for new invoices')
+    setFetching('Looking')
     setError(null)
     try {
       const pending = await getInvoicesWithoutCompletedRun()
-      if (pending.length === 0) {
-        setFetching(null)
-        return
-      }
       for (const [index, invoice] of pending.entries()) {
-        setFetching(`Checking invoice ${index + 1} of ${pending.length}`)
+        setFetching(`${index + 1} of ${pending.length}`)
         await runInvoice(invoice.id).catch(() => undefined)
       }
       await load()
@@ -73,114 +131,138 @@ export default function NeedsYou() {
 
   const dismiss = () => {
     dismissExplainer()
-    setShowExplainer(false)
+    setExplainerOpen(false)
   }
 
   return (
-    <AppShell search={search} onSearchChange={setSearch}>
-      <div className="space-y-6">
-        {error ? (
+    <AppShell waitingCount={queue.length}>
+      {/* Header strip: the count, the shape of the whole pile, the search. */}
+      <div className="shrink-0 border-b border-line bg-surface px-6 py-3">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <h1 className="text-lg font-semibold text-ink tnum">
+            {rows === null ? 'Loading' : `${count(queue.length)} waiting on you`}
+          </h1>
+
+          <div className="min-w-[16rem] flex-1">
+            <ProportionBar counts={counts} compact />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="queue-search" className="sr-only">
+              Search invoices and vendors
+            </label>
+            <input
+              id="queue-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search invoices and vendors"
+              className="h-8 w-56 rounded-md border border-line bg-surface px-2.5 text-sm text-ink placeholder:text-muted"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={fetchNew} disabled={fetching !== null} className="gap-2">
+              {fetching ? <Spinner /> : null}
+              {fetching ?? 'Fetch new invoices'}
+            </Button>
+          </div>
+        </div>
+
+        {explainerOpen ? (
+          <div className="mt-3">
+            <Explainer onDismiss={dismiss} onUpload={openUpload} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setExplainerOpen(true)}
+            className="mt-2 flex h-9 w-full items-center gap-2 rounded-md border border-line px-3 text-sm text-muted transition-colors hover:text-ink"
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+            How Clearline decides
+          </button>
+        )}
+      </div>
+
+      {error ? (
+        <div className="px-6 pt-4">
           <ErrorNote title="The queue could not be loaded">
             {error} Check the connection to the database, then reload the page.
           </ErrorNote>
-        ) : null}
+        </div>
+      ) : null}
 
-        {showExplainer ? <Explainer onDismiss={dismiss} onUpload={openUpload} /> : null}
-
-        <Panel className="px-6 py-6">
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-ink tnum">
-                {rows === null ? ' ' : `${count(queue.length)} waiting on you`}
-              </h1>
-              <p className="mt-1 text-sm text-muted">
-                Everything else cleared the checks on its own.
-              </p>
-            </div>
-
-            <div className="flex items-end gap-8">
-              <div className="text-right">
-                <p className="text-xs text-muted">Received</p>
-                <p className="mt-1 text-lg font-semibold text-ink tnum">{count(decided.length)}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-muted">Value processed</p>
-                <p className="mt-1 text-lg font-semibold text-ink tnum">{money(valueProcessed)}</p>
-              </div>
-              <Button type="button" variant="outline" onClick={fetchNew} disabled={fetching !== null} className="gap-2">
-                {fetching ? <Spinner /> : null}
-                {fetching ?? 'Fetch new invoices'}
-              </Button>
-            </div>
+      {/* The work itself. */}
+      <div className="flex min-h-0 flex-1 gap-4 p-4">
+        <section
+          aria-label="Invoices waiting for a person"
+          className="flex w-[420px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
+        >
+          <div className="grid shrink-0 grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_2rem] gap-2 border-b border-line-soft px-3 py-1.5 text-[11px] tracking-wide text-faint">
+            <span>Invoice</span>
+            <span>Vendor</span>
+            <span className="text-right">Amount</span>
+            <span>Outcome</span>
+            <span className="text-right">Age</span>
           </div>
 
-          <div className="mt-6">
-            <ProportionBar counts={counts} />
-          </div>
-        </Panel>
-
-        <Panel>
-          {rows === null ? (
-            <Loading>Loading the queue</Loading>
-          ) : queue.length === 0 ? (
-            <EmptyState
-              action={
-                <Button type="button" onClick={openUpload}>
-                  Upload an invoice
-                </Button>
-              }
-            >
-              {search.trim().length > 0
-                ? 'No waiting invoice matches that search. Clear the search to see the whole queue.'
-                : `Nothing needs you. ${count(cleared)} invoices cleared on their own this month.`}
-            </EmptyState>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="min-w-[960px]">
-                <div
-                  className="grid grid-cols-[7rem_minmax(0,1fr)_14rem_9rem_7rem] gap-4 border-b border-line-soft px-5 py-2.5 text-xs font-medium text-muted"
-                  aria-hidden="true"
-                >
-                  <span>Outcome</span>
-                  <span>Invoice</span>
-                  <span>Vendor</span>
-                  <span className="text-right">Amount</span>
-                  <span className="text-right">Waiting</span>
-                </div>
-
-                <ul>
-                  {queue.map((row) => (
-                    <li key={row.run.id} className="border-b border-line-soft last:border-0">
-                      <Link
-                        to={`/decisions/${row.run.id}`}
-                        className="grid grid-cols-[7rem_minmax(0,1fr)_14rem_9rem_7rem] items-start gap-4 px-5 py-4 transition-colors hover:bg-line-soft/60"
+          <div className="min-h-0 flex-1 overflow-auto">
+            {rows === null ? (
+              <Loading>Loading the queue</Loading>
+            ) : queue.length === 0 ? (
+              <EmptyState
+                action={
+                  <Button type="button" onClick={openUpload}>
+                    Upload an invoice
+                  </Button>
+                }
+              >
+                {search.trim().length > 0
+                  ? 'No waiting invoice matches that search. Clear the search to see the whole queue.'
+                  : `Nothing needs you. ${count(cleared)} invoices cleared on their own this month.`}
+              </EmptyState>
+            ) : (
+              <ul ref={listRef}>
+                {queue.map((row) => {
+                  const active = row.invoice?.invoice_number === selectedNumber
+                  return (
+                    <li key={row.run.id}>
+                      <button
+                        type="button"
+                        onClick={() => select(row)}
+                        aria-current={active ? 'true' : undefined}
+                        className={cn(
+                          'grid h-10 w-full grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_2rem] items-center gap-2 border-b border-line-soft px-3 text-left transition-colors',
+                          active ? 'bg-line-soft' : 'hover:bg-line-soft/60',
+                        )}
                       >
-                        <VerdictChip verdict={row.run.verdict} size="sm" />
-
-                        <span className="min-w-0">
-                          <span className="identifier block text-sm font-medium text-ink">
-                            {row.invoice?.invoice_number ?? 'Not read yet'}
-                          </span>
-                          <span className="mt-1 block text-sm text-muted">
-                            {row.primaryCode ? reasonSentence(row.primaryCode) : 'No reason was recorded.'}
-                          </span>
+                        <span className="identifier truncate text-sm text-ink">
+                          {row.invoice?.invoice_number ?? 'Not read yet'}
                         </span>
-
-                        <span className="truncate text-sm text-ink-soft">{vendorNameFor(row)}</span>
-
+                        <span className="truncate text-sm text-muted" title={vendorNameFor(row)}>
+                          {vendorNameFor(row)}
+                        </span>
                         <span className="text-right text-sm text-ink tnum">
                           {money(row.invoice?.total, row.invoice?.currency ?? 'INR')}
                         </span>
-
-                        <span className="text-right text-sm text-muted tnum">{waitingFor(row.run.started_at)}</span>
-                      </Link>
+                        <VerdictChip verdict={row.run.verdict} size="sm" />
+                        <span className="text-right text-xs text-muted tnum">{waitingSince(row.run.started_at)}</span>
+                      </button>
                     </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-        </Panel>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-line-soft px-3 py-1.5 text-[11px] text-faint">
+            <span className="identifier">j</span> and <span className="identifier">k</span> move,{' '}
+            <span className="identifier">Enter</span> opens the document,{' '}
+            <span className="identifier">a</span> approves, <span className="identifier">Esc</span> clears
+          </div>
+        </section>
+
+        <section aria-label="The selected invoice" className="min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface">
+          <DecisionDetail runId={selected?.run.id ?? null} onChanged={load} handleRef={detail} />
+        </section>
       </div>
     </AppShell>
   )

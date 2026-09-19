@@ -8,10 +8,22 @@
 
 import type { Evidence, ReasonCode, Verdict } from './types.ts'
 
-export const EXPLAIN_PROMPT =
-  'Explain this accounts-payable decision to a finance manager in one short paragraph. ' +
-  'State what the process decided and why, referencing the specific amounts and documents involved. ' +
-  'Do not speculate about intent or accuse anyone of fraud — describe what was observed. Do not add advice.'
+export const EXPLAIN_PROMPT = [
+  'Tell a finance manager what is going on with this invoice, in under 60 words.',
+  '',
+  'Write to the reader, about the document. Say what is wrong and what that means for them.',
+  '',
+  'Rules:',
+  '1. Never name the system, the software, or "accounts payable" as the actor. Nothing "was decided by" anything. The invoice, the vendor and the order are the subjects of your sentences.',
+  '2. Do not open by restating the verdict. The reader can already see it. Open with the thing that is actually wrong.',
+  '3. Plain sentences. Name the specific amounts, vendors and order numbers involved, and use them rather than describing them in the abstract.',
+  '4. Describe what was observed. Never guess at why anyone did anything, and never suggest fraud.',
+  '5. No advice, no next steps, no closing summary. Stop when you have said what is true.',
+  '6. Under 60 words. Two or three sentences is usually right.',
+  '',
+  'For an invoice from a company that is not on the vendor list and cites no order, this reads well:',
+  '"Zenith Traders is not in the approved vendor list, and this invoice cites no purchase order. There is nothing on file to check it against."',
+].join('\n')
 
 export interface ExplainDecisionRequest {
   verdict: Verdict
@@ -42,12 +54,14 @@ export interface ExplainDecisionFailure {
 
 export type ExplainDecisionResponse = ExplainDecisionSuccess | ExplainDecisionFailure
 
+// How the fallback sentence ends. Written as something that happened to this
+// document rather than as an action a department took.
 export const VERDICT_LABELS: Readonly<Record<Verdict, string>> = {
-  AUTO_APPROVE: 'Approved automatically',
-  REVIEW: 'Sent for human review',
-  HOLD: 'Held pending further information',
-  BLOCK: 'Blocked from payment',
-  ROUTED_NOT_PAID: 'Routed for record-keeping, not for payment',
+  AUTO_APPROVE: 'cleared every check and needs nobody',
+  REVIEW: 'needs somebody to look at it',
+  HOLD: 'is on hold until something is resolved',
+  BLOCK: 'will not be paid',
+  ROUTED_NOT_PAID: 'is filed rather than paid',
 }
 
 export const REASON_CODE_LABELS: Readonly<Record<ReasonCode, string>> = {
@@ -78,6 +92,10 @@ export const REASON_CODE_LABELS: Readonly<Record<ReasonCode, string>> = {
   LOW_CONFIDENCE_VENDOR_MATCH: 'the vendor name matched the master only weakly',
 }
 
+function capitalise(sentence: string): string {
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1)
+}
+
 function formatAmount(total: number | null | undefined, currency: string | null | undefined): string | null {
   if (typeof total !== 'number' || !Number.isFinite(total)) return null
   const formatted = total.toLocaleString('en-IN', { maximumFractionDigits: 2 })
@@ -94,18 +112,22 @@ export function fallbackExplanation(request: ExplainDecisionRequest): string {
   const vendor = summary?.vendor_name ? ` from ${summary.vendor_name}` : ''
   const amount = formatAmount(summary?.total, summary?.currency)
   const amountClause = amount ? ` for ${amount}` : ''
-  const poClause = summary?.matched_po ? `, matched to ${summary.matched_po},` : ''
+  const poClause = summary?.matched_po ? ` against ${summary.matched_po}` : ''
 
   const reasons = request.reason_codes
     .map((code) => REASON_CODE_LABELS[code as ReasonCode])
     .filter((label): label is string => Boolean(label))
 
-  const verdictLabel = VERDICT_LABELS[request.verdict] ?? request.verdict
-  const head = `${subject}${vendor}${amountClause}${poClause} — ${verdictLabel.toLowerCase()}.`
+  const verdictClause = VERDICT_LABELS[request.verdict] ?? request.verdict
+  const head = `${subject}${vendor}${amountClause}${poClause} ${verdictClause}.`
 
   if (reasons.length === 0) return head
-  if (reasons.length === 1) return `${head} Reason: ${reasons[0]}.`
-  return `${head} Reasons: ${reasons.slice(0, -1).join('; ')}; and ${reasons[reasons.length - 1]}.`
+  const why =
+    reasons.length === 1
+      ? capitalise(reasons[0])
+      : `${capitalise(reasons.slice(0, -1).join(', '))}, and ${reasons[reasons.length - 1]}`
+
+  return `${why}. ${head}`
 }
 
 // The user turn sent to the model. The verdict and its evidence go in as settled

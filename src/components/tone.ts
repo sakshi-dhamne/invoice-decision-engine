@@ -6,7 +6,8 @@
 import type { VerdictTone } from '@/lib/reasonCopy.ts'
 
 export interface ToneClasses {
-  // Filled chip: tinted background, darker ink.
+  // Filled chip: tinted background, the darker ink of the pair, and a hairline of
+  // the verdict colour so it holds its shape in a dense list.
   chip: string
   // A rule or left border in the verdict colour.
   border: string
@@ -20,28 +21,28 @@ export interface ToneClasses {
 
 const TONES: Readonly<Record<VerdictTone, ToneClasses>> = {
   approve: {
-    chip: 'bg-approve-bg text-approve-ink',
+    chip: 'bg-approve-bg text-approve-ink border border-approve/30',
     border: 'border-approve',
     fill: 'bg-approve',
     text: 'text-approve-ink',
     panel: 'bg-approve-bg border-approve',
   },
   review: {
-    chip: 'bg-review-bg text-review-ink',
+    chip: 'bg-review-bg text-review-ink border border-review/30',
     border: 'border-review',
     fill: 'bg-review',
     text: 'text-review-ink',
     panel: 'bg-review-bg border-review',
   },
   hold: {
-    chip: 'bg-hold-bg text-hold-ink',
+    chip: 'bg-hold-bg text-hold-ink border border-hold/30',
     border: 'border-hold',
     fill: 'bg-hold',
     text: 'text-hold-ink',
     panel: 'bg-hold-bg border-hold',
   },
   block: {
-    chip: 'bg-block-bg text-block-ink',
+    chip: 'bg-block-bg text-block-ink border border-block/30',
     border: 'border-block',
     fill: 'bg-block',
     text: 'text-block-ink',

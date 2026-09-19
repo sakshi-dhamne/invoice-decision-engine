@@ -16,7 +16,7 @@ export class ProviderError extends Error {
 // The contract every provider adapter returns — nothing downstream of the
 // orchestrator knows or cares which provider produced it.
 export interface ExtractionProvider {
-  extract(pdfBase64: string, prompt: string): Promise<ExtractionResult>
+  extract(documentBase64: string, prompt: string, mimeType: string): Promise<ExtractionResult>
 }
 
 // A plain text completion. Stage 7 turns a settled verdict into a sentence; it

@@ -54,8 +54,29 @@ export interface ExtractionResult {
 
 export type ExtractionProviderName = 'gemini' | 'anthropic'
 
+// What a document may arrive as. Scanned invoices turn up as phone photos far more
+// often than as PDFs, and both models read an image natively, so the only thing
+// that has to change between the two is the media type declared alongside the
+// bytes.
+export const ACCEPTED_DOCUMENT_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/heic',
+] as const
+
+export type AcceptedDocumentType = (typeof ACCEPTED_DOCUMENT_TYPES)[number]
+
+export function isAcceptedDocumentType(value: unknown): value is AcceptedDocumentType {
+  return typeof value === 'string' && (ACCEPTED_DOCUMENT_TYPES as readonly string[]).includes(value)
+}
+
 export interface ExtractInvoiceRequest {
+  // Named for the case it started with. It carries whichever of the accepted types
+  // `mime_type` declares, and defaults to a PDF when nothing says otherwise.
   pdf_base64: string
+  mime_type?: AcceptedDocumentType
   invoice_number?: string
   // Forces the chain down to entries for this provider only, bypassing fallback
   // to the others — used by the harness's `?provider=` testing mode.

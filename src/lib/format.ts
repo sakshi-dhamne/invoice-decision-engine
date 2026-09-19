@@ -56,7 +56,19 @@ export function duration(ms: number | null | undefined): string {
   return `${Math.round(ms / 60_000)} min`
 }
 
-// How long something has been waiting, in the words a person would use.
+// How long something has been waiting. The compact form is for a column in a list
+// a person scans; the long form is for a sentence.
+export function waitingSince(since: string | null | undefined, now: number = Date.now()): string {
+  if (!since) return 'now'
+  const start = new Date(since).getTime()
+  if (Number.isNaN(start)) return 'now'
+  const minutes = Math.max(0, Math.round((now - start) / 60_000))
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.round(hours / 24)}d`
+}
+
 export function waitingFor(since: string | null | undefined, now: number = Date.now()): string {
   if (!since) return 'Just now'
   const start = new Date(since).getTime()
@@ -74,6 +86,31 @@ export function fileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} bytes`
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
+ * References the system keeps for itself.
+ *
+ * A file hash, a row id and a storage key are how this software finds things
+ * again. None of them is a fact about the invoice, and none belongs in front of a
+ * person working a queue. They are shown in one place, the audit block on the
+ * History tab, where someone chasing a support question can copy them.
+ */
+export const INTERNAL_KEYS: ReadonlySet<string> = new Set([
+  'file_hash',
+  'pdf_url',
+  'storage_path',
+  'run_id',
+  'invoice_id',
+  'submission_id',
+  'parent_run_id',
+  'id',
+  'vendor_id',
+  'prior_run_id',
+])
+
+export function isInternalKey(key: string): boolean {
+  return INTERNAL_KEYS.has(key)
 }
 
 // Evidence keys arrive as snake_case from the rules engine. A person should not

@@ -1,48 +1,52 @@
-// The frame every product screen sits in: the name, the four places you can go,
-// search, the colour-scheme toggle, and the button that puts a document in.
+// The frame every product screen sits in.
+//
+// A fixed rail on the left, and everything else given to the work. No centred
+// column and no maximum width: on a wide screen the queue should be using the
+// screen, not floating in the middle of it.
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Moon, Search, Sun, Upload } from 'lucide-react'
+import { LayoutList, Moon, ScrollText, Sliders, Sun, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { count } from '@/lib/format.ts'
 import { applyTheme, readTheme, restoreExplainer, storeTheme, type Theme } from '@/lib/localSettings.ts'
-import { UploadContext } from './uploadContext.ts'
-import { UploadDialog } from './UploadDialog.tsx'
+import { CommandPalette } from './CommandPalette.tsx'
+import { useUpload } from './uploadContext.ts'
+import { Spinner } from './Primitives.tsx'
 
 const NAV = [
-  { to: '/', label: 'Needs you' },
-  { to: '/dashboard', label: 'All runs' },
-  { to: '/rules', label: 'Rules' },
+  { to: '/', label: 'Needs you', icon: LayoutList },
+  { to: '/dashboard', label: 'All runs', icon: ScrollText },
+  { to: '/rules', label: 'Rules', icon: Sliders },
 ]
 
 export function AppShell({
   children,
-  search,
-  onSearchChange,
+  waitingCount,
 }: {
   children: ReactNode
-  search?: string
-  onSearchChange?: (value: string) => void
+  // Shown as a badge beside "Needs you" when the page that knows it says so.
+  waitingCount?: number
 }) {
   const [theme, setTheme] = useState<Theme>(readTheme)
-  const [uploadOpen, setUploadOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const { openUpload, progress } = useUpload()
   const location = useLocation()
   const navigate = useNavigate()
 
-  // The class on <html> is the external system here; the state above is the
-  // source of truth for it.
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
 
-  const toggleTheme = () => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    applyTheme(next)
-    storeTheme(next)
-  }
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next: Theme = current === 'dark' ? 'light' : 'dark'
+      storeTheme(next)
+      return next
+    })
+  }, [])
 
   // Reopening the explainer clears the stored flag and sends the reader to the
   // page that shows it.
@@ -52,80 +56,112 @@ export function AppShell({
     else navigate('/')
   }
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setPaletteOpen((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
-    <UploadContext.Provider value={{ openUpload: () => setUploadOpen(true) }}>
-    <div className="min-h-screen bg-ground">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface">
-        <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-6 px-6">
-          <Link to="/" className="shrink-0 text-lg font-bold tracking-tight text-ink">
+    <div className="flex h-screen overflow-hidden bg-ground">
+        <nav
+          aria-label="Main"
+          className="flex w-[220px] shrink-0 flex-col border-r border-line bg-surface"
+        >
+          <Link to="/" className="block px-5 py-5 text-lg font-bold tracking-tight text-ink">
             Clearline
           </Link>
 
-          <nav aria-label="Main" className="flex shrink-0 items-center gap-1">
+          <ul className="flex-1 space-y-0.5 px-2.5">
             {NAV.map((item) => {
               const active = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
+              const Icon = item.icon
               return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-sm transition-colors',
-                    active ? 'bg-line-soft font-medium text-ink' : 'text-muted hover:text-ink',
-                  )}
-                >
-                  {item.label}
-                </Link>
+                <li key={item.to}>
+                  <Link
+                    to={item.to}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors',
+                      active ? 'bg-line-soft font-medium text-ink' : 'text-muted hover:text-ink',
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1">{item.label}</span>
+                    {item.to === '/' && waitingCount != null && waitingCount > 0 ? (
+                      <span className="rounded-full bg-line-soft px-1.5 py-0.5 text-xs text-ink-soft tnum">
+                        {count(waitingCount)}
+                      </span>
+                    ) : null}
+                  </Link>
+                </li>
               )
             })}
+            <li>
+              <button
+                type="button"
+                onClick={showHowItWorks}
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:text-ink"
+              >
+                <span className="size-4 shrink-0" aria-hidden="true" />
+                How it works
+              </button>
+            </li>
+          </ul>
+
+          {progress ? (
+            <div className="mx-2.5 mb-2 rounded-md border border-line px-2.5 py-2">
+              <p className="flex items-center gap-2 text-xs text-ink-soft">
+                {progress.done < progress.total ? <Spinner className="size-3" /> : null}
+                <span className="tnum">
+                  {count(progress.done)} of {count(progress.total)} read
+                </span>
+              </p>
+              {progress.failed > 0 ? (
+                <p className="mt-0.5 text-xs text-muted tnum">{count(progress.failed)} could not be read</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="space-y-2 border-t border-line p-2.5">
             <button
               type="button"
-              onClick={showHowItWorks}
-              className="rounded-md px-3 py-1.5 text-sm text-muted transition-colors hover:text-ink"
+              onClick={() => setPaletteOpen(true)}
+              className="flex w-full items-center justify-between rounded-md border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:text-ink"
             >
-              How it works
+              <span>Search and jump</span>
+              <kbd className="identifier rounded border border-line px-1 py-0.5 text-xs">Ctrl K</kbd>
             </button>
-          </nav>
-
-          <div className="ml-auto flex items-center gap-3">
-            {onSearchChange ? (
-              <div className="relative hidden lg:block">
-                <label htmlFor="shell-search" className="sr-only">
-                  Search invoices and vendors
-                </label>
-                <Search aria-hidden="true" className="absolute left-2.5 top-2.5 size-4 text-faint" />
-                <input
-                  id="shell-search"
-                  type="search"
-                  value={search ?? ''}
-                  onChange={(event) => onSearchChange(event.target.value)}
-                  placeholder="Search invoices and vendors"
-                  className="h-9 w-64 rounded-md border border-line bg-surface pl-8 pr-3 text-sm text-ink placeholder:text-muted"
-                />
-              </div>
-            ) : null}
 
             <button
               type="button"
               onClick={toggleTheme}
-              aria-label={theme === 'dark' ? 'Switch to the light colour scheme' : 'Switch to the dark colour scheme'}
-              className="rounded-md border border-line p-2 text-muted transition-colors hover:text-ink"
+              className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:text-ink"
             >
-              {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              {theme === 'dark' ? <Sun className="size-4" aria-hidden="true" /> : <Moon className="size-4" aria-hidden="true" />}
+              {theme === 'dark' ? 'Light colours' : 'Dark colours'}
             </button>
 
-            <Button type="button" onClick={() => setUploadOpen(true)} className="gap-2">
+            <Button type="button" onClick={openUpload} className="w-full gap-2">
               <Upload className="size-4" aria-hidden="true" />
-              Upload an invoice
+              Upload
             </Button>
           </div>
-        </div>
-      </header>
+        </nav>
 
-      <main className="mx-auto max-w-[1400px] px-6 py-8">{children}</main>
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
 
-      <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onToggleTheme={toggleTheme}
+        onUpload={openUpload}
+      />
     </div>
-    </UploadContext.Provider>
   )
 }

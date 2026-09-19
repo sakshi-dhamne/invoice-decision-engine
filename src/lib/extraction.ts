@@ -1,5 +1,11 @@
 import { supabase } from './supabase.ts'
-import type { ExtractInvoiceResponse, ExtractionProviderName, ExtractionResult } from './extractionSchema.ts'
+import {
+  isAcceptedDocumentType,
+  type AcceptedDocumentType,
+  type ExtractInvoiceResponse,
+  type ExtractionProviderName,
+  type ExtractionResult,
+} from './extractionSchema.ts'
 import type { ExtractionRow, Json } from './database.types.ts'
 
 // Self-reported model confidence is weakly calibrated, so the pipeline must not gate
@@ -53,27 +59,34 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-async function fetchPdfAsBase64(pdfUrl: string): Promise<string> {
-  const response = await fetch(pdfUrl)
+// The bytes, and what the server says they are. A seeded fixture is always a PDF;
+// an uploaded document is whatever content type it was stored with, which is how a
+// phone photo keeps its identity all the way to the model.
+async function fetchDocument(documentUrl: string): Promise<{ base64: string; mimeType: AcceptedDocumentType }> {
+  const response = await fetch(documentUrl)
   if (!response.ok) {
-    throw new Error(`Failed to fetch ${pdfUrl}: ${response.status}`)
+    throw new Error(`Failed to fetch ${documentUrl}: ${response.status}`)
   }
+  const declared = (response.headers.get('content-type') ?? '').split(';')[0].trim()
   const buffer = await response.arrayBuffer()
-  return arrayBufferToBase64(buffer)
+  return {
+    base64: arrayBufferToBase64(buffer),
+    mimeType: isAcceptedDocumentType(declared) ? declared : 'application/pdf',
+  }
 }
 
 // Fetches a PDF from same-origin `public/invoices/` and posts it to the extract-invoice
 // edge function, which is the only thing that talks to Gemini/Anthropic. Not called
 // directly outside this module — everything downstream goes through getOrExtract.
 async function extractInvoice(
-  pdfUrl: string,
+  documentUrl: string,
   invoiceNumber?: string,
   provider?: ExtractionProviderName,
 ): Promise<ExtractionOutcome> {
-  const pdf_base64 = await fetchPdfAsBase64(pdfUrl)
+  const { base64, mimeType } = await fetchDocument(documentUrl)
 
   const { data, error } = await supabase.functions.invoke<ExtractInvoiceResponse>('extract-invoice', {
-    body: { pdf_base64, invoice_number: invoiceNumber, provider },
+    body: { pdf_base64: base64, mime_type: mimeType, invoice_number: invoiceNumber, provider },
   })
 
   if (error) throw error

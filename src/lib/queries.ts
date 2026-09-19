@@ -275,3 +275,16 @@ export async function getInvoicesWithoutCompletedRun(): Promise<InvoiceRow[]> {
   const decided = new Set(runs.map((run) => run.invoice_id).filter((id): id is string => id !== null))
   return invoices.filter((invoice) => !decided.has(invoice.id))
 }
+
+// How long each extraction actually took, from the stage log the pipeline writes.
+// The dashboard reports the median of these rather than a cost, because the token
+// counts and the price list that a cost needs are not recorded anywhere.
+export async function getExtractionDurations(): Promise<number[]> {
+  const { data, error } = await supabase
+    .from('stage_logs')
+    .select('duration_ms')
+    .eq('stage', 'extract')
+    .not('duration_ms', 'is', null)
+  if (error) throw error
+  return data.map((row) => row.duration_ms).filter((value): value is number => value !== null)
+}

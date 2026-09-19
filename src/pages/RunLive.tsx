@@ -15,6 +15,7 @@ import {
   EvidenceGrid,
   LabelValueGrid,
   Loading,
+  PageBody,
   Panel,
   PanelHeading,
   Spinner,
@@ -204,7 +205,8 @@ export default function RunLive() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <PageBody>
+        <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink">
             <ArrowLeft className="size-4" aria-hidden="true" />
@@ -285,7 +287,8 @@ export default function RunLive() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </PageBody>
     </AppShell>
   )
 }

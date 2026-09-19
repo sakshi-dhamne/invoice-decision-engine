@@ -10,6 +10,7 @@ import {
   Loading,
   Panel,
   PanelHeading,
+  PageBody,
   Statistic,
   VerdictChip,
 } from '@/components/Primitives.tsx'
@@ -17,6 +18,7 @@ import { tone } from '@/components/tone.ts'
 import { cn } from '@/lib/utils'
 import { count, duration, money, percent, shortDate } from '@/lib/format.ts'
 import { loadFeed, matchesSearch, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
+import { getExtractionDurations } from '@/lib/queries.ts'
 import { reasonSentence, VERDICT_LABEL, verdictTone } from '@/lib/reasonCopy.ts'
 import { DECISION_RULES } from '@/rules/decide.ts'
 import type { Verdict } from '@/lib/database.types.ts'
@@ -27,11 +29,6 @@ import type { Verdict } from '@/lib/database.types.ts'
 const VERDICT_BY_CODE = new Map<string, Verdict>(
   DECISION_RULES.flatMap((row) => (row.verdict ? [[row.code, row.verdict] as const] : [])),
 )
-
-// What one document costs to put through: one extraction call and one explanation
-// call. Published list prices, recorded here so the figure on screen can be traced
-// to something rather than appearing from nowhere.
-const COST_PER_DOCUMENT_INR = 1.6
 
 const FILTERS: { value: Verdict | 'all'; label: string }[] = [
   { value: 'all', label: 'Everything' },
@@ -54,11 +51,13 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Verdict | 'all'>('all')
+  const [readDurations, setReadDurations] = useState<number[]>([])
 
   const load = useCallback(async () => {
     try {
-      const feed = await loadFeed()
+      const [feed, durations] = await Promise.all([loadFeed(), getExtractionDurations()])
       setRows(feed.rows)
+      setReadDurations(durations)
       setError(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The runs could not be loaded.')
@@ -83,6 +82,14 @@ export default function Dashboard() {
           .filter((value): value is number => value !== null && Number.isFinite(value)),
       ),
     [decided],
+  )
+
+  // How long reading a page actually takes, measured from the extract stage rather
+  // than assumed. A cost per document would need the token counts and the price
+  // list, and neither is recorded, so this reports the thing that is.
+  const medianReadMs = useMemo(
+    () => median(readDurations.filter((value) => Number.isFinite(value))),
+    [readDurations],
   )
 
   // Value that never reached a payment file: everything blocked, held or sent for
@@ -115,9 +122,25 @@ export default function Dashboard() {
   )
 
   return (
-    <AppShell search={search} onSearchChange={setSearch}>
-      <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-ink">All runs</h1>
+    <AppShell>
+      <PageBody>
+        <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-ink">All runs</h1>
+          <div>
+            <label htmlFor="runs-search" className="sr-only">
+              Search invoices and vendors
+            </label>
+            <input
+              id="runs-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search invoices and vendors"
+              className="h-9 w-64 rounded-md border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted"
+            />
+          </div>
+        </div>
 
         {error ? (
           <ErrorNote title="The runs could not be loaded">
@@ -137,9 +160,9 @@ export default function Dashboard() {
             note="From receiving the document to a verdict"
           />
           <Statistic
-            label="Cost per document"
-            value={money(COST_PER_DOCUMENT_INR)}
-            note="Reading the page, and writing the explanation"
+            label="Reading time per document"
+            value={medianReadMs != null ? duration(medianReadMs) : 'No data yet'}
+            note="How long the model spends on a page, at the median"
           />
           <Statistic
             label="Value stopped before payment"
@@ -252,7 +275,8 @@ export default function Dashboard() {
             )}
           </Panel>
         </div>
-      </div>
+        </div>
+      </PageBody>
     </AppShell>
   )
 }

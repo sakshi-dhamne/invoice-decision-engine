@@ -60,7 +60,14 @@ interface AnthropicContentBlock {
 // differently and the fallback stops being a fallback.
 export function createAnthropicProvider(model: string, apiKey: string): ExtractionProvider {
   return {
-    async extract(pdfBase64, prompt) {
+    async extract(documentBase64, prompt, mimeType) {
+      // A PDF goes in as a document block. An image goes in as an image block.
+      // Anthropic has no HEIC support, so one arriving here fails this provider
+      // and the chain moves on to a model that can read it.
+      const source = { type: 'base64', media_type: mimeType, data: documentBase64 }
+      const documentPart =
+        mimeType === 'application/pdf' ? { type: 'document', source } : { type: 'image', source }
+
       const requestBody = {
         model,
         max_tokens: MAX_TOKENS,
@@ -77,7 +84,7 @@ export function createAnthropicProvider(model: string, apiKey: string): Extracti
           {
             role: 'user',
             content: [
-              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+              documentPart,
               { type: 'text', text: prompt },
             ],
           },
