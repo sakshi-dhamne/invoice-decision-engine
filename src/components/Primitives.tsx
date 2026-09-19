@@ -1,0 +1,216 @@
+// The small pieces every screen shares: verdict chips, reason codes, label/value
+// grids, empty states, loading and error states.
+//
+// None of these hold a sentence of their own about a verdict or a reason code.
+// They take what reasonCopy.ts says and lay it out.
+
+import type { ReactNode } from 'react'
+
+import { cn } from '@/lib/utils'
+import { evidenceValue, humanKey } from '@/lib/format.ts'
+import { reasonSentence, verdictLabel, verdictTone } from '@/lib/reasonCopy.ts'
+import type { Verdict } from '@/lib/database.types.ts'
+import { tone } from './tone.ts'
+
+// ---------------------------------------------------------------------------
+// Verdict
+// ---------------------------------------------------------------------------
+
+export function VerdictChip({
+  verdict,
+  size = 'md',
+  className,
+}: {
+  verdict: Verdict | null | undefined
+  size?: 'sm' | 'md' | 'lg'
+  className?: string
+}) {
+  const classes = tone(verdictTone(verdict))
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-full font-medium',
+        size === 'sm' && 'px-2 py-0.5 text-xs',
+        size === 'md' && 'px-2.5 py-1 text-sm',
+        size === 'lg' && 'px-3.5 py-1.5 text-base',
+        classes.chip,
+        className,
+      )}
+    >
+      {verdictLabel(verdict)}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Reason codes
+// ---------------------------------------------------------------------------
+
+/** The audit-trail identifier. Always accompanied by its sentence, never alone. */
+export function ReasonCodeChip({ code }: { code: string }) {
+  return (
+    <span className="identifier inline-flex items-center rounded border border-line bg-line-soft px-1.5 py-0.5 text-xs text-ink-soft">
+      {code}
+    </span>
+  )
+}
+
+/** Every code's sentence, then the codes themselves underneath. */
+export function ReasonCodes({ codes }: { codes: readonly string[] }) {
+  if (codes.length === 0) return null
+  return (
+    <div className="space-y-3">
+      <ul className="space-y-1.5">
+        {codes.map((code) => (
+          <li key={code} className="text-sm text-ink-soft">
+            {reasonSentence(code)}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-1.5">
+        {codes.map((code) => (
+          <ReasonCodeChip key={code} code={code} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+export function Panel({ children, className }: { children: ReactNode; className?: string }) {
+  return <section className={cn('rounded-lg border border-line bg-surface', className)}>{children}</section>
+}
+
+export function PanelHeading({ children, right }: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 border-b border-line-soft px-5 py-3.5">
+      <h2 className="text-sm font-semibold text-ink">{children}</h2>
+      {right}
+    </div>
+  )
+}
+
+export interface Field {
+  label: string
+  value: ReactNode
+  /** Renders the value in the verdict colour, for a field a check objected to. */
+  flagged?: boolean
+  mono?: boolean
+}
+
+export function LabelValueGrid({
+  fields,
+  columns = 2,
+  flagTone = 'block',
+}: {
+  fields: Field[]
+  columns?: 1 | 2
+  flagTone?: 'approve' | 'review' | 'hold' | 'block'
+}) {
+  return (
+    <dl className={cn('grid gap-x-6 gap-y-3.5', columns === 2 ? 'grid-cols-2' : 'grid-cols-1')}>
+      {fields.map((field) => (
+        <div key={field.label} className="min-w-0">
+          <dt className="text-xs text-muted">{field.label}</dt>
+          <dd
+            className={cn(
+              'mt-0.5 truncate text-sm text-ink tnum',
+              field.mono && 'identifier',
+              field.flagged && cn('font-medium', tone(flagTone).text),
+            )}
+            title={typeof field.value === 'string' ? field.value : undefined}
+          >
+            {field.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** Rules-engine evidence, laid out rather than dumped as JSON. */
+export function EvidenceGrid({ evidence }: { evidence: Record<string, unknown> }) {
+  const entries = Object.entries(evidence).filter(([, value]) => value !== undefined)
+  if (entries.length === 0) return null
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-2">
+      {entries.map(([key, value]) => (
+        <div key={key} className="min-w-0">
+          <dt className="text-xs text-muted">{humanKey(key)}</dt>
+          <dd className="mt-0.5 break-words text-sm text-ink-soft tnum">{evidenceValue(value)}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// States
+// ---------------------------------------------------------------------------
+
+/** Empty states read as an instruction, not an apology. */
+export function EmptyState({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="px-5 py-14 text-center">
+      <p className="text-sm text-muted">{children}</p>
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+    </div>
+  )
+}
+
+export function Spinner({ className, label }: { className?: string; label?: string }) {
+  return (
+    <span
+      className={cn(
+        'inline-block size-3.5 shrink-0 animate-spin rounded-full border-2 border-line border-t-ink-soft',
+        className,
+      )}
+      role={label ? 'status' : undefined}
+      aria-label={label}
+    />
+  )
+}
+
+export function Loading({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-center gap-2.5 px-5 py-14 text-sm text-muted">
+      <Spinner />
+      <span>{children}</span>
+    </div>
+  )
+}
+
+/** Errors say what happened and what to do about it. */
+export function ErrorNote({ title, children }: { title: string; children?: ReactNode }) {
+  const classes = tone('block')
+  return (
+    <div className={cn('rounded-lg border px-4 py-3', classes.panel)}>
+      <p className={cn('text-sm font-medium', classes.text)}>{title}</p>
+      {children ? <p className={cn('mt-1 text-sm', classes.text)}>{children}</p> : null}
+    </div>
+  )
+}
+
+/** A figure with its caption, used across the landing page and the dashboard. */
+export function Statistic({
+  label,
+  value,
+  note,
+  className,
+}: {
+  label: string
+  value: ReactNode
+  note?: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <p className="text-xs text-muted">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-ink tnum">{value}</p>
+      {note ? <p className="mt-0.5 text-xs text-muted">{note}</p> : null}
+    </div>
+  )
+}

@@ -3,7 +3,120 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ---------------------------------------------------------------------------
+   Tokens.
+
+   Every colour in the product is defined here and nowhere else. Colour carries
+   exactly one meaning: which verdict a document reached. Nothing decorative is
+   tinted, so a splash of green or red on the page is always information.
+
+   The shadcn primitives under components/ui read the `--background`/`--foreground`
+   family, so those are defined from the same tokens rather than kept as a second
+   palette. One source, two vocabularies.
+--------------------------------------------------------------------------- */
+
+:root {
+  --radius: 0.625rem;
+
+  --ground: #f6f7f8;
+  --surface: #ffffff;
+  --ink: #14171a;
+  --ink-soft: #3e464f;
+  --muted: #5c6672;
+  --faint: #8a929c;
+  --line: #e2e6ea;
+  --line-soft: #eef1f3;
+
+  --approve: #0f7a5a;
+  --approve-bg: #e3f1eb;
+  --approve-ink: #0b6349;
+  --review: #a8620b;
+  --review-bg: #fbf0e0;
+  --review-ink: #7a480a;
+  --hold: #45568a;
+  --hold-bg: #e9edf6;
+  --hold-ink: #33427a;
+  --block: #b42318;
+  --block-bg: #fbeae8;
+  --block-ink: #8f1c13;
+
+  --font-ui: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-prose: 'Source Serif 4', ui-serif, Georgia, serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* shadcn primitive names, resolved from the tokens above. */
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: var(--surface);
+  --secondary: var(--line-soft);
+  --secondary-foreground: var(--ink);
+  --muted-surface: var(--line-soft);
+  --muted-foreground: var(--muted);
+  --accent: var(--line-soft);
+  --accent-foreground: var(--ink);
+  --destructive: var(--block);
+  --destructive-foreground: var(--surface);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--ink-soft);
+}
+
+.dark {
+  --ground: #10141a;
+  --surface: #171c24;
+  --ink: #e9edf1;
+  --ink-soft: #c3cbd4;
+  --muted: #99a3af;
+  --faint: #7b8593;
+  --line: #262e39;
+  --line-soft: #1f2630;
+
+  --approve: #3dbe92;
+  --approve-bg: #16281f;
+  --approve-ink: #6fd3ae;
+  --review: #d99a3d;
+  --review-bg: #322718;
+  --review-ink: #e3b26f;
+  --hold: #7e92d1;
+  --hold-bg: #1e2538;
+  --hold-ink: #a3b4e8;
+  --block: #e8705f;
+  --block-bg: #33201d;
+  --block-ink: #f0917f;
+}
+
 @theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+
+  --color-approve: var(--approve);
+  --color-approve-bg: var(--approve-bg);
+  --color-approve-ink: var(--approve-ink);
+  --color-review: var(--review);
+  --color-review-bg: var(--review-bg);
+  --color-review-ink: var(--review-ink);
+  --color-hold: var(--hold);
+  --color-hold-bg: var(--hold-bg);
+  --color-hold-ink: var(--hold-ink);
+  --color-block: var(--block);
+  --color-block-bg: var(--block-bg);
+  --color-block-ink: var(--block-ink);
+
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-prose);
+  --font-mono: var(--font-code);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -14,7 +127,6 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
@@ -23,62 +135,66 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
+  html {
+    font-family: var(--font-ui);
+  }
+
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Numbers line up in columns wherever they appear. */
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Focus has to be visible for someone driving this from the keyboard. */
+  :focus-visible {
+    outline: 2px solid var(--ink-soft);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Explanation prose. Never UI chrome. */
+  .prose-serif {
+    font-family: var(--font-prose);
+    line-height: 1.55;
+  }
+
+  /* Identifiers and reason codes. Never labels. */
+  .identifier {
+    font-family: var(--font-code);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* The live run view is the only place anything moves, and it stops moving for
+   anyone who has asked for that. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
