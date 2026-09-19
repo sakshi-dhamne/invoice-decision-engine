@@ -28,7 +28,10 @@ export const SYNTHETIC_PO: PurchaseOrderRecord = {
   total_amount: 141600,
   currency: 'INR',
   amount_billed_to_date: 0,
-  tax_treatment: 'exclusive',
+  // The order authorises 141600 and its line says 141600, so what it states is the
+  // tax-inclusive figure. The exclusive case is reached by overriding this, which
+  // keeps the label and the numbers agreeing here.
+  tax_treatment: 'inclusive',
   status: 'open',
   line_items: [{ description: 'Recycled Kraft Paper Reels', quantity: 20, unit_price: 7080, amount: 141600 }],
   delivery_schedule: null,

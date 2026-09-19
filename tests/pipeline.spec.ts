@@ -96,7 +96,7 @@ describe('row adapters', () => {
       total_amount: 141600,
       currency: 'INR',
       amount_billed_to_date: 0,
-      tax_treatment: 'exclusive',
+      tax_treatment: 'inclusive',
       status: 'open',
       line_items: [{ description: 'Recycled Kraft Paper Reels', quantity: 20, unit_price: 7080, amount: 141600 }],
       delivery_schedule: null,
