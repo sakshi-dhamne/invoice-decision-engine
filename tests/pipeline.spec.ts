@@ -7,8 +7,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { toInvoiceFacts, toPurchaseOrderRecord, toVendorRecord } from '../src/lib/pipeline.ts'
+import { checkArithmetic } from '../src/rules/validate.ts'
 import type { InvoiceRow, PurchaseOrderRow, VendorRow } from '../src/lib/database.types.ts'
 import type { ExtractionResult } from '../src/lib/extractionSchema.ts'
+import { rules } from './fixtures.ts'
 
 const invoiceRow: InvoiceRow = {
   id: 'row-1',
@@ -112,5 +114,57 @@ describe('row adapters', () => {
       delivery_schedule: [{ milestone: 'P1', description: 'First reel delivery', amount: 70800, due_date: '2026-09-10' }],
     })
     expect(scheduled.delivery_schedule).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The stated total is authoritative
+// ---------------------------------------------------------------------------
+
+// The total is what the vendor is asking to be paid. A figure the system worked
+// out for itself must never stand in for it: seated in place of the stated total a
+// derived one agrees with its own inputs, and the arithmetic check — the only rule
+// that would have caught the substitution — passes on a document it should hold.
+describe('the total the rules decide on is the one the document states', () => {
+  const statedTotal = (over: Partial<ExtractionResult>, row: Partial<InvoiceRow> = {}): number | null =>
+    toInvoiceFacts({ ...extraction, ...over }, { ...invoiceRow, ...row }).total
+
+  it('carries the extracted total through untouched', () => {
+    for (const total of [141600, 66000, 0.5, -22000, 1_000_000]) {
+      expect(statedTotal({ total })).toBe(total)
+    }
+  })
+
+  it('keeps a stated total that disagrees with subtotal plus tax', () => {
+    // The arithmetic-inconsistent case: the parts add to 73160, the document says
+    // 66000. The facts must carry 66000 so the check can see the gap at all.
+    const over = { subtotal: 62000, tax: 11160, total: 66000, unreadable_fields: [] }
+    const facts = toInvoiceFacts({ ...extraction, ...over }, { ...invoiceRow, fields_not_printed: null })
+    expect(facts.total).toBe(66000)
+    expect(facts.total).not.toBe((facts.subtotal ?? 0) + (facts.tax ?? 0))
+
+    const report = checkArithmetic(facts, rules)
+    expect(report.passed).toBe(false)
+    expect(report.code).toBe('ARITHMETIC_INCONSISTENT')
+    expect(report.evidence).toMatchObject({ stated_total: 66000, computed_total: 73160 })
+  })
+
+  it('never substitutes subtotal plus tax for a total the model could not read', () => {
+    // A model that gives up on an obscured total and returns the sum of the parts
+    // contradicts itself by also declaring the field unreadable. The worked-out
+    // figure is discarded, and the absence is reported rather than paid.
+    expect(statedTotal({ subtotal: 62000, tax: 11160, total: 73160, unreadable_fields: ['total'] })).toBeNull()
+  })
+
+  it('discards any value for a field the document does not print or the model could not read', () => {
+    expect(statedTotal({ total: 141600 }, { fields_not_printed: ['total'] })).toBeNull()
+    const facts = toInvoiceFacts(
+      { ...extraction, subtotal: 120000, tax: 21600, unreadable_fields: ['subtotal', 'bank_account'] },
+      { ...invoiceRow, fields_not_printed: null },
+    )
+    expect(facts.subtotal).toBeNull()
+    expect(facts.bank_account).toBeNull()
+    // A field nobody flagged is untouched.
+    expect(facts.tax).toBe(21600)
   })
 })

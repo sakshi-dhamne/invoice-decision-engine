@@ -123,6 +123,9 @@ Rules:
 1. Transcribe only what is printed on the document. Never infer, calculate, or complete a value that is not legible.
 2. If a field is absent, obscured, or you cannot read it with confidence, return null for that field and add its name to unreadable_fields. Returning null is the correct answer for an unreadable field — a guess is a failure.
 3. Do not compute values. If the subtotal is not printed, return null — do not derive it from the line items. If the total is illegible, return null even though you could add up the parts.
+3a. This holds hardest for the total, because it is the figure the vendor is asking to be paid. Arithmetic is never an acceptable source for it: subtotal + tax is a guess about the total, not a reading of it. Where a printed total is faint, blurred, greyed out or partly obscured but still legible, transcribe what it says and score its confidence low. Only when you cannot make it out at all is the answer null plus "total" in unreadable_fields.
+3b. Never reconcile the figures with each other. If the total you read does not equal subtotal + tax, that is the document's discrepancy to have, not an error to correct: return every figure exactly as printed and say what you noticed in extraction_notes. Downstream checks exist to catch precisely that mismatch, and they cannot see it if you have already resolved it.
+3c. A field named in unreadable_fields must come back null. Listing a field and still returning a value for it says the value was worked out rather than read, and it will be discarded.
 4. Transcribe the vendor name exactly as printed, including suffixes, punctuation and spacing. Do not normalise or expand abbreviations.
 5. Amounts as plain numbers — no currency symbols, no thousands separators. ₹1,84,500 becomes 184500.
 6. Dates as ISO YYYY-MM-DD.
