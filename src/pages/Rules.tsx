@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AppShell } from '@/components/AppShell.tsx'
-import { ErrorNote, Loading, Panel, PanelHeading, Spinner, VerdictChip } from '@/components/Primitives.tsx'
+import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner, VerdictChip } from '@/components/Primitives.tsx'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { loadFeed, needsAPerson } from '@/lib/feed.ts'
@@ -113,7 +113,8 @@ export default function Rules() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <PageBody>
+        <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Rules</h1>
           <p className="mt-1 max-w-[72ch] text-sm text-muted">
@@ -214,7 +215,8 @@ export default function Rules() {
             </ol>
           </Panel>
         </div>
-      </div>
+        </div>
+      </PageBody>
     </AppShell>
   )
 }

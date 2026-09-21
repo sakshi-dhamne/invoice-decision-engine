@@ -7,7 +7,7 @@
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
-import { evidenceValue, humanKey } from '@/lib/format.ts'
+import { evidenceValue, humanKey, isInternalKey } from '@/lib/format.ts'
 import { reasonSentence, verdictLabel, verdictTone } from '@/lib/reasonCopy.ts'
 import type { Verdict } from '@/lib/database.types.ts'
 import { tone } from './tone.ts'
@@ -30,7 +30,7 @@ export function VerdictChip({
     <span
       className={cn(
         'inline-flex shrink-0 items-center rounded-full font-medium',
-        size === 'sm' && 'px-2 py-0.5 text-xs',
+        size === 'sm' && 'px-1.5 py-0 text-xs',
         size === 'md' && 'px-2.5 py-1 text-sm',
         size === 'lg' && 'px-3.5 py-1.5 text-base',
         classes.chip,
@@ -79,6 +79,12 @@ export function ReasonCodes({ codes }: { codes: readonly string[] }) {
 // ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
+
+/** A scrolling, padded page body. The shell gives its children the whole area and
+ *  lets each one decide how to fill it; this is the ordinary answer. */
+export function PageBody({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={cn('min-h-0 flex-1 overflow-auto p-6', className)}>{children}</div>
+}
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
   return <section className={cn('rounded-lg border border-line bg-surface', className)}>{children}</section>
@@ -131,9 +137,16 @@ export function LabelValueGrid({
   )
 }
 
-/** Rules-engine evidence, laid out rather than dumped as JSON. */
+/**
+ * Rules-engine evidence, laid out rather than dumped as JSON.
+ *
+ * Internal references are dropped here rather than at each call site, so a new
+ * screen cannot leak a hash onto the page by forgetting to.
+ */
 export function EvidenceGrid({ evidence }: { evidence: Record<string, unknown> }) {
-  const entries = Object.entries(evidence).filter(([, value]) => value !== undefined)
+  const entries = Object.entries(evidence).filter(
+    ([key, value]) => value !== undefined && !isInternalKey(key),
+  )
   if (entries.length === 0) return null
   return (
     <dl className="grid grid-cols-2 gap-x-6 gap-y-2">

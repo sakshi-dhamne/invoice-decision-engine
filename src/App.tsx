@@ -1,5 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 
+import { UploadProvider } from '@/components/UploadProvider.tsx'
+
 import Dashboard from '@/pages/Dashboard'
 import Decision from '@/pages/Decision'
 import ExtractionHarness from '@/pages/ExtractionHarness'
@@ -12,6 +14,7 @@ import VendorNew from '@/pages/VendorNew'
 function App() {
   return (
     <BrowserRouter>
+      <UploadProvider>
       <Routes>
         <Route path="/" element={<NeedsYou />} />
         <Route path="/runs/:id" element={<RunLive />} />
@@ -26,6 +29,7 @@ function App() {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </UploadProvider>
     </BrowserRouter>
   )
 }

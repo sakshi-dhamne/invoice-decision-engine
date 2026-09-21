@@ -17,7 +17,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
-import { ErrorNote, Loading, Panel, PanelHeading, Spinner } from '@/components/Primitives.tsx'
+import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -173,7 +173,8 @@ export default function VendorNew() {
 
   return (
     <AppShell>
-      <div className="space-y-6">
+      <PageBody>
+        <div className="space-y-6">
         <Link
           to={fromRunId ? `/decisions/${fromRunId}` : '/'}
           className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink"
@@ -395,7 +396,8 @@ export default function VendorNew() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </PageBody>
     </AppShell>
   )
 }

@@ -3,8 +3,9 @@
 -- app never creates this bucket for itself.
 --
 -- Seeded fixture PDFs stay where they are, served from public/invoices. Anything a
--- person uploads through the product goes here instead, and the invoice row records
--- the object key in `storage_path`. src/lib/pipeline.ts resolves one or the other
+-- person uploads through the product goes here instead, whether it is a PDF or a
+-- photograph of the page, and the invoice row records the object key in
+-- `storage_path`. src/lib/pipeline.ts resolves one or the other
 -- from that column, so nothing downstream has to know which kind of document it is
 -- looking at.
 --
@@ -19,9 +20,19 @@
 -- ============================================================================
 -- The bucket
 -- ============================================================================
-insert into storage.buckets (id, name, public)
-values ('invoices', 'invoices', true)
-on conflict (id) do update set public = true;
+-- allowed_mime_types is the bucket's own guard. It has to list every type the
+-- extraction can read, or a photograph is refused at the door and never reaches
+-- the model that would have read it happily.
+insert into storage.buckets (id, name, public, allowed_mime_types)
+values (
+  'invoices',
+  'invoices',
+  true,
+  array['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/heic']
+)
+on conflict (id) do update
+  set public = true,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 -- ============================================================================
 -- Policies

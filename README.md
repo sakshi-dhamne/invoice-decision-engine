@@ -58,17 +58,28 @@ uniformity ceiling).
 
 | Route | What it is |
 |---|---|
-| `/` | Needs you. The queue of invoices waiting on a person, a proportion bar at true scale, and the first-visit explainer |
+| `/` | The queue on the left, the selected invoice on the right. Choosing a row changes the pane, not the route; the selection lives in `?invoice=`. `j` and `k` move, `Enter` opens the document, `a` approves, `Esc` clears |
 | `/runs/:id` | The seven stages lighting up as they execute, over Supabase Realtime |
-| `/decisions/:id` | The verdict, its explanation, the evidence, the order, and the trail |
+| `/decisions/:id` | The same detail pane as a full page, for linking to |
 | `/vendors/new?from=:runId` | Onboarding a vendor an invoice was held for |
 | `/rules` | The thresholds, and the order the checks run in |
 | `/dashboard` | Every run, filterable, with the figures across the top |
 | `/harness` | The development harness. Not part of the product, and unchanged |
 
+The detail pane has three tabs. **Decision** is the verdict, the disputed figures
+side by side, and why. **Document** renders the page itself with `pdfjs-dist`,
+beside what was read off it; if that fails it falls back to an `<iframe>`, and an
+uploaded photograph is shown as an image. **History** is the trail, and the only
+place in the product where a file hash, a row id or a storage key appears.
+
+The command palette opens on the usual shortcut and jumps to any invoice by number
+or vendor.
+
 Every sentence a user reads about a verdict or a reason code comes from
 `src/lib/reasonCopy.ts`. Nothing else carries phrasing for them. Colour is defined
-once in `src/index.css` and only ever means a verdict.
+once in `src/index.css` and only ever means a verdict. `tests/ui.spec.ts` enforces
+both, along with the onboarding split and the rule that internal references stay
+out of the way.
 
 ## Running it
 
@@ -82,7 +93,8 @@ npm run lint
 ```
 
 Database setup: run `supabase/migrations/001…005` in order in the Supabase SQL
-editor, then `007_storage.sql` (the bucket uploaded PDFs go to) and
+editor, then `007_storage.sql` (the bucket uploaded documents go to, PDFs and
+photographs alike) and
 `008_product_columns.sql` (three columns the screens need). The edge functions in
 `supabase/functions/` are deployed by hand and read `GEMINI_API_KEY` /
 `ANTHROPIC_API_KEY` from the function environment, so no key ever reaches the

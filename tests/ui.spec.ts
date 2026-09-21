@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { REASON_SENTENCE, VERDICT_LABEL } from '../src/lib/reasonCopy.ts'
+import { INTERNAL_KEYS } from '../src/lib/format.ts'
+import { BUSINESS_DIFF_FIELDS } from '../src/lib/decisionData.ts'
+import { EXPLAIN_PROMPT, fallbackExplanation } from '../src/rules/explain.ts'
 import { REASON_CODES } from '../src/rules/types.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -116,6 +119,82 @@ describe('house style', () => {
   it('defines every colour in the token block and nowhere else', () => {
     const offenders = productFiles.filter((path) => /#[0-9a-fA-F]{3,8}\b/.test(readFileSync(path, 'utf8')))
     expect(offenders.map((path) => path.slice(repoRoot.length))).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// What reaches the screen
+// ---------------------------------------------------------------------------
+
+// A file hash, a row id and a storage key are how this software finds things
+// again, not facts about an invoice. They appear in the audit block on the
+// History tab and nowhere else.
+describe('internal references stay out of the way', () => {
+  const detail = readFileSync(join(repoRoot, 'src/components/DecisionDetail.tsx'), 'utf8')
+
+  it('filters them out of every evidence block, centrally', () => {
+    const primitives = readFileSync(join(repoRoot, 'src/components/Primitives.tsx'), 'utf8')
+    expect(primitives).toContain('isInternalKey(key)')
+    for (const key of ['file_hash', 'run_id', 'invoice_id', 'storage_path']) {
+      expect(INTERNAL_KEYS.has(key), key).toBe(true)
+    }
+  })
+
+  it('names the hash and the storage key only inside the audit block', () => {
+    // Both appear twice: once in the copied text, once in the rendered list. Both
+    // of those are the audit block on the History tab.
+    expect(detail.match(/file_hash/g)?.length ?? 0).toBeLessThanOrEqual(2)
+    expect(detail.match(/storage_path/g)?.length ?? 0).toBeLessThanOrEqual(2)
+    expect(detail).toContain('For an auditor')
+  })
+
+  it('shows the reason codes once, in the verdict card', () => {
+    // The chip markup appears once. "Why this outcome" lists sentences only.
+    expect(detail.match(/identifier inline-flex items-center rounded border/g)?.length ?? 0).toBe(1)
+  })
+
+  it('diffs business fields, and never the file', () => {
+    expect(BUSINESS_DIFF_FIELDS).toContain('total')
+    expect(BUSINESS_DIFF_FIELDS).toContain('bank_account')
+    expect(BUSINESS_DIFF_FIELDS).not.toContain('file_hash')
+    expect(BUSINESS_DIFF_FIELDS).not.toContain('notes')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The shell fills the screen
+// ---------------------------------------------------------------------------
+
+describe('layout', () => {
+  it('puts no maximum width on the shell', () => {
+    const shell = readFileSync(join(repoRoot, 'src/components/AppShell.tsx'), 'utf8')
+    expect(shell).not.toMatch(/max-w-\[/)
+    expect(shell).not.toMatch(/\bmax-w-(screen|7xl|6xl|5xl|4xl|3xl|2xl|xl|lg)\b/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The explanation voice
+// ---------------------------------------------------------------------------
+
+describe('explanations are written to the reader', () => {
+  it('asks the model for the register the brief specifies', () => {
+    expect(EXPLAIN_PROMPT).toContain('under 60 words')
+    expect(EXPLAIN_PROMPT.toLowerCase()).toContain('never name the system')
+    expect(EXPLAIN_PROMPT).toContain('Write to the reader')
+  })
+
+  it('never lets the system be the subject of the fallback sentence', () => {
+    const text = fallbackExplanation({
+      verdict: 'HOLD',
+      reason_codes: ['UNKNOWN_VENDOR', 'NO_PO_MATCH'],
+      evidence: {},
+      summary: { invoice_number: 'ZT-1', vendor_name: 'A Company', total: 92000, currency: 'INR' },
+    })
+    expect(text.toLowerCase()).not.toContain('accounts payable')
+    expect(text.split(/\s+/).length).toBeLessThan(60)
+    // The problem comes first, the outcome second.
+    expect(text.indexOf('approved vendor') === -1 || text.indexOf('on hold') > 0).toBe(true)
   })
 })
 

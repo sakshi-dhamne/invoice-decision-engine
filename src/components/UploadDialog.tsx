@@ -1,12 +1,16 @@
-// Putting a document in.
+// Putting documents in.
 //
-// This has to work on an invoice the system has never seen: not a fixture, not a
-// known vendor, not necessarily an order it can find. Whatever the rules then make
-// of it is the right answer, including holding it as a company we do not know.
+// Several at a time, PDFs or photographs, and each one checked as soon as it has
+// been read. Processing is sequential on purpose: the extraction is rate limited,
+// and a burst of parallel calls would fail slower than a queue succeeds.
+//
+// Closing the dialog does not stop the queue. The work carries on and the rail
+// reports where it has got to, because a person should not have to watch a
+// progress bar to keep their own upload alive.
 
-import { useCallback, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Upload } from 'lucide-react'
+import { AlertTriangle, Check, FileText, Upload, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -18,172 +22,285 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { fileSize } from '@/lib/format.ts'
+import { count, fileSize } from '@/lib/format.ts'
 import { runInvoice } from '@/lib/pipeline.ts'
-import { rejectUpload, uploadInvoicePdf } from '@/lib/uploads.ts'
+import { rejectUpload, uploadInvoiceDocument, UPLOAD_ACCEPT } from '@/lib/uploads.ts'
 import { ErrorNote, Spinner } from './Primitives.tsx'
+import { tone } from './tone.ts'
 
-type Phase = 'idle' | 'saving' | 'starting'
+export interface UploadProgress {
+  done: number
+  total: number
+  failed: number
+}
 
-export function UploadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [file, setFile] = useState<File | null>(null)
+type ItemState = 'waiting' | 'rejected' | 'saving' | 'reading' | 'decided' | 'failed'
+
+interface QueuedFile {
+  id: string
+  file: File
+  state: ItemState
+  // The sentence shown beside the file, when there is one to show.
+  note: string | null
+  runId: string | null
+}
+
+const STATE_LABEL: Record<ItemState, string> = {
+  waiting: 'Waiting',
+  rejected: 'Cannot be read',
+  saving: 'Saving',
+  reading: 'Reading',
+  decided: 'Decided',
+  failed: 'Failed',
+}
+
+export function UploadDialog({
+  open,
+  onOpenChange,
+  onProgress,
+  onFinished,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onProgress?: (progress: UploadProgress | null) => void
+  onFinished?: () => void
+}) {
+  const [items, setItems] = useState<QueuedFile[]>([])
+  const [running, setRunning] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  const [phase, setPhase] = useState<Phase>('idle')
   const [dragging, setDragging] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
+  // The queue keeps going after the dialog closes, so the loop reads from a ref
+  // rather than from state that may no longer be mounted.
+  const cancelled = useRef(false)
 
-  const busy = phase !== 'idle'
-
-  const choose = useCallback((candidate: File | undefined) => {
-    if (!candidate) return
-    const rejection = rejectUpload(candidate)
-    if (rejection) {
-      setFile(null)
-      setProblem(rejection.reason)
-      return
-    }
+  const add = useCallback((files: FileList | File[]) => {
+    const incoming = [...files]
+    if (incoming.length === 0) return
     setProblem(null)
-    setFile(candidate)
+    setItems((current) => [
+      ...current,
+      ...incoming.map((file, index): QueuedFile => {
+        const rejection = rejectUpload(file)
+        return {
+          id: `${Date.now()}-${index}-${file.name}`,
+          file,
+          state: rejection ? 'rejected' : 'waiting',
+          note: rejection?.reason ?? null,
+          runId: null,
+        }
+      }),
+    ])
   }, [])
+
+  const patch = (id: string, change: Partial<QueuedFile>) => {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...change } : item)))
+  }
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setDragging(false)
-    if (busy) return
-    const dropped = event.dataTransfer.files
-    if (dropped.length > 1) {
-      setProblem('Drop one invoice at a time, so each gets its own decision.')
-      return
-    }
-    choose(dropped[0])
+    if (running) return
+    add(event.dataTransfer.files)
   }
 
-  const reset = () => {
-    setFile(null)
+  const start = async () => {
+    const queued = items.filter((item) => item.state === 'waiting')
+    if (queued.length === 0) return
+
+    cancelled.current = false
+    setRunning(true)
     setProblem(null)
-    setPhase('idle')
+
+    let done = 0
+    let failed = 0
+    const total = queued.length
+    onProgress?.({ done, total, failed })
+
+    for (const item of queued) {
+      if (cancelled.current) break
+
+      try {
+        patch(item.id, { state: 'saving', note: null })
+        const { invoice } = await uploadInvoiceDocument(item.file)
+
+        patch(item.id, { state: 'reading' })
+        let runId: string | null = null
+        await runInvoice(invoice.id, {
+          onRunCreated: (run) => {
+            runId = run.id
+            patch(item.id, { runId: run.id })
+          },
+        })
+        patch(item.id, { state: 'decided', runId })
+      } catch (caught) {
+        failed++
+        patch(item.id, {
+          state: 'failed',
+          note: caught instanceof Error ? caught.message : 'This one could not be read.',
+        })
+      }
+
+      done++
+      onProgress?.({ done, total, failed })
+    }
+
+    setRunning(false)
+    onFinished?.()
+
+    // Leave the rail's summary up long enough to be read, then clear it.
+    window.setTimeout(() => onProgress?.(null), 6000)
+  }
+
+  useEffect(() => {
+    return () => {
+      cancelled.current = true
+    }
+  }, [])
+
+  const reset = () => {
+    if (running) return
+    setItems([])
+    setProblem(null)
     setDragging(false)
   }
 
-  const send = async () => {
-    if (!file) return
-    setProblem(null)
-    setPhase('saving')
-
-    try {
-      const { invoice } = await uploadInvoicePdf(file)
-      setPhase('starting')
-
-      // The run is started here and the person is sent to watch it. The promise
-      // outlives this dialog on purpose: navigating within the app does not stop
-      // it, and the live view follows the same run through Realtime.
-      void runInvoice(invoice.id, {
-        onRunCreated: (run) => {
-          reset()
-          onOpenChange(false)
-          navigate(`/runs/${run.id}`)
-        },
-      }).catch(() => {
-        // The run marks itself failed in the database, and the live view reports
-        // it from there. Nothing more to do from the dialog, which has closed.
-      })
-    } catch (error) {
-      setPhase('idle')
-      setProblem(error instanceof Error ? error.message : 'The file could not be saved. Try again in a moment.')
-    }
-  }
+  const readable = items.filter((item) => item.state !== 'rejected')
+  const waiting = items.filter((item) => item.state === 'waiting').length
+  const decided = items.filter((item) => item.state === 'decided')
+  const blockClasses = tone('block')
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (busy) return
-        if (!next) reset()
+        if (!next && !running) reset()
         onOpenChange(next)
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Upload an invoice</DialogTitle>
+          <DialogTitle>Upload invoices</DialogTitle>
           <DialogDescription>
-            One PDF at a time. We read it, check it against the orders and the vendor list, and show you the decision as
-            it happens.
+            PDFs or photographs of the page. Add as many as you like. We read them one after another and check each
+            one as it arrives.
           </DialogDescription>
         </DialogHeader>
 
         <div
           onDragOver={(event) => {
             event.preventDefault()
-            if (!busy) setDragging(true)
+            if (!running) setDragging(true)
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
           className={cn(
-            'rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
+            'rounded-lg border-2 border-dashed px-6 py-8 text-center transition-colors',
             dragging ? 'border-ink-soft bg-line-soft' : 'border-line',
           )}
         >
-          {file ? (
-            <div className="flex items-center justify-center gap-3">
-              <FileText className="size-5 text-muted" aria-hidden="true" />
-              <div className="text-left">
-                <p className="text-sm font-medium text-ink">{file.name}</p>
-                <p className="text-xs text-muted tnum">{fileSize(file.size)}</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <Upload className="mx-auto size-6 text-faint" aria-hidden="true" />
-              <p className="mt-3 text-sm text-ink-soft">Drop a PDF here</p>
-              <p className="mt-1 text-xs text-muted">or choose one from your computer</p>
-            </>
-          )}
+          <Upload className="mx-auto size-6 text-faint" aria-hidden="true" />
+          <p className="mt-3 text-sm text-ink-soft">Drop files here</p>
+          <p className="mt-1 text-xs text-muted">A PDF, or a photo taken on a phone</p>
 
           <div className="mt-4">
             <label
-              htmlFor="invoice-file"
+              htmlFor="invoice-files"
               className={cn(
                 'inline-flex cursor-pointer items-center rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink',
-                busy && 'pointer-events-none opacity-50',
+                running && 'pointer-events-none opacity-50',
               )}
             >
-              {file ? 'Choose a different file' : 'Choose a file'}
+              Choose files
             </label>
             <input
-              ref={inputRef}
-              id="invoice-file"
+              id="invoice-files"
               type="file"
-              accept="application/pdf,.pdf"
+              multiple
+              accept={UPLOAD_ACCEPT}
               className="sr-only"
-              disabled={busy}
+              disabled={running}
               onChange={(event) => {
-                choose(event.target.files?.[0])
-                // Let the same file be picked again after a rejection.
+                if (event.target.files) add(event.target.files)
                 event.target.value = ''
               }}
             />
           </div>
         </div>
 
-        {problem ? <ErrorNote title="That file cannot be used">{problem}</ErrorNote> : null}
+        {items.length > 0 ? (
+          <ul className="max-h-64 divide-y divide-line-soft overflow-auto rounded-md border border-line">
+            {items.map((item) => (
+              <li key={item.id} className="flex items-center gap-3 px-3 py-2">
+                {item.state === 'decided' ? (
+                  <Check className="size-4 shrink-0 text-approve" aria-hidden="true" />
+                ) : item.state === 'failed' || item.state === 'rejected' ? (
+                  <AlertTriangle className={cn('size-4 shrink-0', blockClasses.text)} aria-hidden="true" />
+                ) : item.state === 'saving' || item.state === 'reading' ? (
+                  <Spinner className="shrink-0" />
+                ) : (
+                  <FileText className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                )}
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              reset()
-              onOpenChange(false)
-            }}
-            disabled={busy}
-          >
-            Cancel
-          </Button>
-          <Button type="button" onClick={send} disabled={!file || busy} className="gap-2">
-            {busy ? <Spinner className="border-t-primary-foreground" /> : null}
-            {phase === 'saving' ? 'Saving the file' : phase === 'starting' ? 'Starting the checks' : 'Upload and check'}
-          </Button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-ink">{item.file.name}</p>
+                  <p
+                    className={cn(
+                      'truncate text-xs',
+                      item.state === 'failed' || item.state === 'rejected' ? blockClasses.text : 'text-muted',
+                    )}
+                  >
+                    {item.note ?? `${STATE_LABEL[item.state]}, ${fileSize(item.file.size)}`}
+                  </p>
+                </div>
+
+                {item.state === 'decided' && item.runId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false)
+                      navigate(`/decisions/${item.runId}`)
+                    }}
+                    className="shrink-0 text-xs text-ink underline underline-offset-4"
+                  >
+                    See it
+                  </button>
+                ) : null}
+
+                {!running && item.state !== 'decided' ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.file.name} from the list`}
+                    onClick={() => setItems((current) => current.filter((entry) => entry.id !== item.id))}
+                    className="shrink-0 rounded p-1 text-muted transition-colors hover:text-ink"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {problem ? <ErrorNote title="These files could not be sent">{problem}</ErrorNote> : null}
+
+        <DialogFooter className="items-center sm:justify-between">
+          <p className="text-xs text-muted tnum">
+            {running
+              ? `Reading ${count(decided.length + 1)} of ${count(readable.length)}`
+              : items.length > 0
+                ? `${count(readable.length)} ready, ${count(items.length - readable.length)} cannot be read`
+                : ''}
+          </p>
+          <span className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {running ? 'Close and keep going' : 'Close'}
+            </Button>
+            <Button type="button" onClick={start} disabled={waiting === 0 || running} className="gap-2">
+              {running ? <Spinner className="border-t-primary-foreground" /> : null}
+              {running ? 'Reading' : `Upload and check ${count(waiting)}`}
+            </Button>
+          </span>
         </DialogFooter>
       </DialogContent>
     </Dialog>

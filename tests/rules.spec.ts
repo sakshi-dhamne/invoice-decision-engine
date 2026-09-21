@@ -796,7 +796,12 @@ describe('stage 7 fallback', () => {
       },
     })
     expect(text).toContain('INV-ACM-5521')
-    expect(text).toContain('blocked from payment')
+    expect(text).toContain('will not be paid')
     expect(text).toContain('bank account')
+
+    // Written to the reader, about the document. The system is never the subject,
+    // and the sentence opens with what is wrong rather than with the verdict.
+    expect(text.toLowerCase()).not.toContain('accounts payable')
+    expect(text.split(/\s+/).length).toBeLessThan(60)
   })
 })

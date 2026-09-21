@@ -10,12 +10,12 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 // this adapter makes exactly one attempt per call.
 export function createGeminiProvider(model: string, apiKey: string): ExtractionProvider {
   return {
-    async extract(pdfBase64, prompt) {
+    async extract(documentBase64, prompt, mimeType) {
       const url = `${GEMINI_API_BASE}/${model}:generateContent`
       const requestBody = {
         contents: [
           {
-            parts: [{ inline_data: { mime_type: 'application/pdf', data: pdfBase64 } }, { text: prompt }],
+            parts: [{ inline_data: { mime_type: mimeType, data: documentBase64 } }, { text: prompt }],
           },
         ],
         generationConfig: {

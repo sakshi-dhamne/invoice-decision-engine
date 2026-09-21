@@ -12,7 +12,13 @@
 // explain-decision uses as well; this file is the extraction-specific part of the
 // request: validating the body, building the adapters, shaping the response.
 
-import { EXTRACTION_PROMPT, type ExtractInvoiceRequest, type ExtractInvoiceResponse } from '../../../src/lib/extractionSchema.ts'
+import {
+  ACCEPTED_DOCUMENT_TYPES,
+  EXTRACTION_PROMPT,
+  isAcceptedDocumentType,
+  type ExtractInvoiceRequest,
+  type ExtractInvoiceResponse,
+} from '../../../src/lib/extractionSchema.ts'
 import {
   CORS_HEADERS,
   jsonResponse,
@@ -62,6 +68,19 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, error: 'pdf_base64 is required' } satisfies ExtractInvoiceResponse, 400)
   }
 
+  // A document with no declared type is a PDF, which is what every caller sent
+  // before images were accepted.
+  const mimeType = request.mime_type ?? 'application/pdf'
+  if (!isAcceptedDocumentType(mimeType)) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: `mime_type "${mimeType}" is not one this function reads. Accepted: ${ACCEPTED_DOCUMENT_TYPES.join(', ')}`,
+      } satisfies ExtractInvoiceResponse,
+      400,
+    )
+  }
+
   let chain: ChainEntry[]
   try {
     chain = parseProviderChain(Deno.env.get('PROVIDER_CHAIN') || DEFAULT_PROVIDER_CHAIN)
@@ -95,7 +114,7 @@ Deno.serve(async (req: Request) => {
     logContext: `invoice_number=${invoiceNumber}`,
     build: (entry) => {
       const provider = buildProvider(entry, geminiKey, anthropicKey)
-      return provider ? () => provider.extract(request.pdf_base64, EXTRACTION_PROMPT) : null
+      return provider ? () => provider.extract(request.pdf_base64, EXTRACTION_PROMPT, mimeType) : null
     },
   })
 
