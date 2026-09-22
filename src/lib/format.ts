@@ -133,3 +133,17 @@ export function evidenceValue(value: unknown): string {
   }
   return JSON.stringify(value)
 }
+
+/**
+ * The name of the file a document arrived as.
+ *
+ * Only ever shown in the audit block. Once the page has been read, what a person
+ * needs is the invoice number printed on it, and an uploaded document's row is
+ * brought up to date from the extraction so that is what the lists show. The
+ * filename is how a support engineer finds the thing in storage, and nothing else.
+ */
+export function fileNameOf(invoice: { storage_path?: string | null; file_path?: string | null } | null): string | null {
+  const path = invoice?.storage_path ?? invoice?.file_path
+  if (!path) return null
+  return path.split('/').pop() ?? path
+}

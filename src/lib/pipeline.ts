@@ -29,13 +29,14 @@ import {
 } from './queries.ts'
 import type { InvoiceRow, Json, PurchaseOrderRow, RunRow, StageLogStatus, VendorRow } from './database.types.ts'
 
-import { decide, skippedChecks } from '@/rules/decide.ts'
+import { decide } from '@/rules/decide.ts'
 import { matchPurchaseOrder } from '@/rules/poMatch.ts'
 import { resolveVendor } from '@/rules/vendor.ts'
-import { runValidations } from '@/rules/validate.ts'
+import { findExactDuplicate, runValidations } from '@/rules/validate.ts'
 import type { PriorRunHash, ValidationReport } from '@/rules/validate.ts'
 import { toRuleSet } from '@/rules/types.ts'
 import type {
+  Evidence,
   InvoiceFacts,
   LineItemFact,
   PriorRun,
@@ -48,6 +49,7 @@ import type {
   VendorRecord,
 } from '@/rules/types.ts'
 import { fallbackExplanation } from '@/rules/explain.ts'
+import { reasonSentence } from './reasonCopy.ts'
 import type { ExplainDecisionRequest, ExplainDecisionResponse } from '@/rules/explain.ts'
 
 // ---------------------------------------------------------------------------
@@ -217,20 +219,96 @@ async function ensureFileHash(invoice: InvoiceRow, pdfUrl: string): Promise<stri
 // Prior-run context
 // ---------------------------------------------------------------------------
 
-async function loadPriorContext(
+/**
+ * Just enough of a document to place it in arrival order.
+ *
+ * Narrow on purpose: the selection below is the rule that decides which of two
+ * copies of a file is the original, and it is worth being able to test that rule
+ * without a database.
+ */
+export interface ArrivalRecord {
+  id: string
+  invoice_number: string
+  file_hash: string | null
+  created_at: string
+}
+
+export interface CompletedRunRecord {
+  id: string
+  invoice_id: string | null
+  finished_at: string | null
+}
+
+/**
+ * Arrival order.
+ *
+ * `created_at` is when the record was opened, which is when the document arrived.
+ * The row id breaks a tie so the order is total and does not shift between runs:
+ * a seeded corpus inserts every row in one statement and they share a timestamp
+ * to the microsecond.
+ */
+function arrivedBefore(candidate: ArrivalRecord, subject: ArrivalRecord): boolean {
+  const a = String(candidate.created_at ?? '')
+  const b = String(subject.created_at ?? '')
+  if (a !== b) return a < b
+  return candidate.id < subject.id
+}
+
+/**
+ * The documents this one could be a duplicate of.
+ *
+ * Only earlier arrivals, and that scoping is the whole point. It gives the rule
+ * two properties it did not have:
+ *
+ *  - the first copy of a file to arrive is the original, however many times either
+ *    of them is decided again;
+ *  - deciding the original a second time after a copy has landed leaves the
+ *    original alone, because the copy arrived later and is therefore not in this
+ *    list.
+ *
+ * Without it, whichever of the pair was re-run last became the duplicate, so a
+ * re-run could block the document it should have been comparing against.
+ */
+export function selectPriorHashes(
+  subject: ArrivalRecord,
+  documents: readonly ArrivalRecord[],
+  runs: readonly CompletedRunRecord[],
+): PriorRunHash[] {
+  const byId = new Map(documents.map((row) => [row.id, row]))
+  const priorHashes: PriorRunHash[] = []
+  const seen = new Set<string>()
+
+  for (const run of runs) {
+    const row = run.invoice_id ? byId.get(run.invoice_id) : undefined
+    if (!row?.file_hash || row.id === subject.id) continue
+    if (!arrivedBefore(row, subject)) continue
+    // One entry per document, the earliest run of it, so a duplicate points at the
+    // first time we saw the file rather than the most recent re-run.
+    if (seen.has(row.id)) continue
+    seen.add(row.id)
+    priorHashes.push({
+      run_id: run.id,
+      invoice_number: row.invoice_number,
+      file_hash: row.file_hash,
+      received_at: row.created_at,
+      decided_at: run.finished_at,
+    })
+  }
+
+  return priorHashes
+}
+
+export async function loadPriorHashes(context: PipelineContext, invoice: InvoiceRow): Promise<PriorRunHash[]> {
+  return selectPriorHashes(invoice, context.invoices, await getCompletedRuns())
+}
+
+async function loadParentRun(
   context: PipelineContext,
   invoice: InvoiceRow,
   vendorId: string | null,
-): Promise<{ priorHashes: PriorRunHash[]; parentRun: PriorRun | null }> {
+): Promise<PriorRun | null> {
   const runs = await getCompletedRuns()
   const byId = new Map(context.invoices.map((row) => [row.id, row]))
-
-  const priorHashes: PriorRunHash[] = []
-  for (const run of runs) {
-    const row = run.invoice_id ? byId.get(run.invoice_id) : undefined
-    if (!row?.file_hash || row.id === invoice.id) continue
-    priorHashes.push({ run_id: run.id, invoice_number: row.invoice_number, file_hash: row.file_hash })
-  }
 
   // The most recent prior run of this invoice number for this vendor.
   //
@@ -248,10 +326,10 @@ async function loadPriorContext(
   })
 
   const latest = lineage[lineage.length - 1]
-  if (!latest?.invoice_id) return { priorHashes, parentRun: null }
+  if (!latest?.invoice_id) return null
 
   const parentInvoice = byId.get(latest.invoice_id)
-  if (!parentInvoice) return { priorHashes, parentRun: null }
+  if (!parentInvoice) return null
 
   const parentExtraction = await getOrExtract(
     parentInvoice.id,
@@ -260,16 +338,88 @@ async function loadPriorContext(
   )
 
   return {
-    priorHashes,
-    parentRun: {
-      run_id: latest.id,
-      invoice_number: parentInvoice.invoice_number,
-      vendor_id: vendorId,
-      verdict: latest.verdict,
-      reason_codes: (latest.reason_codes ?? []) as ReasonCode[],
-      facts: toInvoiceFacts(parentExtraction.data, parentInvoice),
-      started_at: latest.started_at,
+    run_id: latest.id,
+    invoice_number: parentInvoice.invoice_number,
+    vendor_id: vendorId,
+    verdict: latest.verdict,
+    reason_codes: (latest.reason_codes ?? []) as ReasonCode[],
+    facts: toInvoiceFacts(parentExtraction.data, parentInvoice),
+    started_at: latest.started_at,
+  }
+}
+
+/**
+ * Settles a run that stopped at stage 1 because the file had been seen before.
+ *
+ * The stages after ingest never executed, so they are recorded as skipped rather
+ * than left absent: a reader looking at the run should see that we chose not to
+ * read the document, not wonder whether something broke.
+ *
+ * An uploaded copy opened its row under the file's own name, because nothing had
+ * read it yet and nothing ever will. The original's invoice number is adopted onto
+ * it, which is not a guess: the two files are identical byte for byte, so they are
+ * the same document and it is the same invoice number printed on both.
+ */
+async function concludeAsDuplicate(input: {
+  run: RunRow
+  invoice: InvoiceRow
+  duplicateOf: PriorRunHash
+  fileHash: string | null
+}): Promise<RunOutcome> {
+  const { run, invoice, duplicateOf, fileHash } = input
+
+  const evidence: Record<string, Evidence> = {
+    EXACT_DUPLICATE: {
+      file_hash: fileHash,
+      prior_run_id: duplicateOf.run_id,
+      prior_invoice_number: duplicateOf.invoice_number,
+      prior_decided_at: duplicateOf.decided_at ?? null,
     },
+  }
+
+  for (const stage of PIPELINE_STAGES) {
+    if (stage === 'ingest') continue
+    await logStage(run.id, stage, PIPELINE_STAGES.indexOf(stage) + 1, 'pending', {
+      reasoning: 'Not needed. We had already been through this exact file.',
+    }).catch(() => undefined)
+  }
+
+  if (invoice.storage_path && invoice.invoice_number !== duplicateOf.invoice_number) {
+    await describeUploadedInvoice(invoice.id, { invoice_number: duplicateOf.invoice_number }).catch(() => undefined)
+  }
+
+  const explainRequest: ExplainDecisionRequest = {
+    verdict: 'BLOCK',
+    reason_codes: ['EXACT_DUPLICATE'],
+    evidence,
+    summary: {
+      invoice_number: duplicateOf.invoice_number,
+      vendor_name: invoice.vendor_name_as_printed,
+      total: invoice.total,
+      currency: invoice.currency,
+      matched_po: null,
+    },
+  }
+
+  const finished = await updateRun(run.id, {
+    status: 'complete',
+    verdict: 'BLOCK',
+    reason_codes: ['EXACT_DUPLICATE'],
+    matched_po: null,
+    explanation: fallbackExplanation(explainRequest),
+    finished_at: new Date().toISOString(),
+  })
+
+  return {
+    run: finished,
+    invoice,
+    verdict: 'BLOCK',
+    reasonCodes: ['EXACT_DUPLICATE'],
+    matchedPo: null,
+    explanation: finished.explanation ?? '',
+    explanationSource: 'fallback',
+    checks: null,
+    facts: null,
   }
 }
 
@@ -334,8 +484,10 @@ export interface RunOutcome {
   matchedPo: string | null
   explanation: string
   explanationSource: 'model' | 'fallback'
-  checks: ValidationReport
-  facts: InvoiceFacts
+  // Null on a run that stopped at stage 1, which is the duplicate short-circuit:
+  // the document was never read, so there is nothing to have checked.
+  checks: ValidationReport | null
+  facts: InvoiceFacts | null
 }
 
 export async function runInvoice(invoiceId: string, options: RunInvoiceOptions = {}): Promise<RunOutcome> {
@@ -385,15 +537,45 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
     const ingested = await runStage('ingest', { invoice_id: invoice.id, file_path: invoice.file_path }, async () => {
       const pdfUrl = pdfUrlFor(invoice)
       const fileHash = await ensureFileHash(invoice, pdfUrl)
+      const priorHashes = await loadPriorHashes(context, invoice)
+      const duplicateOf = findExactDuplicate(fileHash, priorHashes)
       return {
-        value: { pdfUrl, fileHash },
-        output: { pdf_url: pdfUrl, file_hash: fileHash } as Json,
-        reasoning: fileHash
-          ? 'Document located and content-hashed.'
-          : 'Document located; content hash unavailable, so the exact-duplicate check will stand down.',
-        flagged: !fileHash,
+        value: { pdfUrl, fileHash, priorHashes, duplicateOf },
+        output: {
+          pdf_url: pdfUrl,
+          file_hash: fileHash,
+          duplicate_of: duplicateOf?.invoice_number ?? null,
+          prior_run_id: duplicateOf?.run_id ?? null,
+          prior_decided_at: duplicateOf?.decided_at ?? null,
+        } as Json,
+        reasoning: duplicateOf
+          ? `This is the same file as ${duplicateOf.invoice_number}, which we have already been through. Nothing further was read.`
+          : fileHash
+            ? 'Found the document and took its fingerprint, so a second copy of it will be recognised.'
+            : 'Found the document. We could not take its fingerprint, so we cannot tell whether this file has arrived before.',
+        flagged: Boolean(duplicateOf) || !fileHash,
       }
     })
+
+    /**
+     * An exact duplicate stops here, before the document is read.
+     *
+     * This check needs the fingerprint and nothing else, so running it at stage 1
+     * costs nothing. Running it after stage 2, which is where it used to sit, meant
+     * paying a model to read a file we had already read, and taking seventeen
+     * seconds to reach an answer the hash gave us instantly.
+     *
+     * The verdict is still the rules engine's: rule 1 blocks an exact duplicate,
+     * and this short-circuit reaches the same outcome by the same rule.
+     */
+    if (ingested.duplicateOf) {
+      return await concludeAsDuplicate({
+        run,
+        invoice,
+        duplicateOf: ingested.duplicateOf,
+        fileHash: ingested.fileHash,
+      })
+    }
 
     // Stage 2 — extract. Reads through the cache; a cached extraction is not a
     // model call.
@@ -403,8 +585,8 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
         value: cached,
         output: cached.data as unknown as Json,
         reasoning: cached.fromCache
-          ? `Read from the extraction cache (${cached.model}); no model call made.`
-          : `Extracted with ${cached.model} in ${cached.duration_ms ?? 0}ms.`,
+          ? 'We had already read this page, so we used what we read the first time.'
+          : 'Read the page and copied out what it says.',
       }
     })
 
@@ -447,13 +629,16 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
           runners_up: match.runners_up,
         } as unknown as Json,
         reasoning: match.vendor
-          ? `Resolved to ${match.vendor.legal_name} at ${match.score.toFixed(3)} (${match.status}).`
-          : `No vendor scored above the floor; best was ${match.score.toFixed(3)}.`,
+          ? match.status === 'matched'
+            ? `The printed name is ${match.vendor.legal_name}, which is on the approved vendor list.`
+            : `The printed name is close to ${match.vendor.legal_name}, but not close enough to be sure.`
+          : 'The printed name does not match any company on the approved vendor list.',
         flagged: match.status !== 'matched',
       }
     })
 
-    const { priorHashes, parentRun } = await loadPriorContext(context, invoice, vendorMatch.vendor?.id ?? null)
+    const parentRun = await loadParentRun(context, invoice, vendorMatch.vendor?.id ?? null)
+    const priorHashes = ingested.priorHashes
 
     // Stage 4 — match PO.
     const vendorPos = vendorMatch.vendor
@@ -477,12 +662,12 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
           } as unknown as Json,
           reasoning:
             match.outcome === 'explicit'
-              ? `Document cites ${match.matched?.po_number}, which belongs to this vendor.`
+              ? `The invoice cites ${match.matched?.po_number}, and that order belongs to this vendor.`
               : match.outcome === 'ambiguous'
-                ? `No usable reference; ${match.candidates.length} orders sit within the ambiguity margin, so none was chosen.`
+                ? `The invoice cites no order number, and ${match.candidates.length} of this vendor's orders fit it equally well, so we did not pick one.`
                 : match.outcome === 'inferred'
-                  ? `No usable reference; ${match.candidates[0]?.po_number} is the closest fit but is a suggestion, not a match.`
-                  : 'No usable reference and no credible candidate.',
+                  ? `The invoice cites no order number. ${match.candidates[0]?.po_number} is the closest fit, but a guess is not a match.`
+                  : 'The invoice cites no order number, and none of this vendor\'s orders fit it.',
           flagged: match.outcome !== 'explicit',
         }
       },
@@ -511,8 +696,10 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
         output: report as unknown as Json,
         reasoning:
           failures.length === 0
-            ? `Every check passed; ${skippedChecks(report).length} stood down as not applicable.`
-            : `Failed: ${failures.join(', ')}.`,
+            ? 'Every check that applies to this invoice passed.'
+            : failures.length === 1
+              ? 'One check objected.'
+              : `${failures.length} checks objected.`,
         flagged: failures.length > 0,
       }
     })
@@ -530,7 +717,7 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
           reevaluated: result.reevaluated,
           evidence: result.evidence,
         } as Json,
-        reasoning: `Rule ${result.matched_rule} matched first (${result.primary}) → ${result.verdict}.`,
+        reasoning: `${reasonSentence(result.primary)} That is what set the outcome.`,
         flagged: result.verdict !== 'AUTO_APPROVE',
       }
     })
@@ -557,7 +744,7 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
         return {
           value: { explanation: fallback, source: 'fallback' },
           output: { explanation: fallback, source: 'fallback' } as Json,
-          reasoning: 'Explanation requested from the deterministic summary; no model call made.',
+          reasoning: 'Wrote the explanation from the decision itself.',
         }
       }
 
@@ -571,14 +758,15 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
         return {
           value: { explanation: data.explanation, source: 'model' },
           output: { explanation: data.explanation, model: data.model, provider: data.provider } as Json,
-          reasoning: `Phrased by ${data.provider}:${data.model} in ${data.duration_ms}ms.`,
+          reasoning: 'Wrote up what was decided, in a sentence or two.',
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         return {
           value: { explanation: fallback, source: 'fallback' },
           output: { explanation: fallback, source: 'fallback', error: message } as Json,
-          reasoning: `Model phrasing unavailable (${message}); fell back to the deterministic summary. The verdict is unaffected.`,
+          reasoning:
+            'Could not phrase the explanation, so we wrote it from the decision itself. The outcome is the same either way.',
           flagged: true,
         }
       }

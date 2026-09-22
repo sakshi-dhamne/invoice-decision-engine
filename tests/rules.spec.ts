@@ -227,6 +227,35 @@ describe('resubmission lineage', () => {
     expect(decision.primary).toBe('EXACT_DUPLICATE')
   })
 
+  it('rule 1 is terminal, and never calls a duplicate a resubmission too', () => {
+    // The live case: an uploaded copy of a document already processed. Its hash
+    // matches, and because it carries the same invoice number as the original the
+    // lineage check also reads it as a resubmission. Saying both would tell the
+    // reader we have already processed this exact document and that it is a
+    // corrected version of one we held, at the same time. An identical file has
+    // corrected nothing.
+    const facts = syntheticInvoice()
+    const parent: PriorRun = {
+      run_id: 'run-parent',
+      invoice_number: facts.invoice_number ?? '',
+      vendor_id: SYNTHETIC_VENDOR.id,
+      verdict: 'HOLD',
+      reason_codes: ['BANK_DETAIL_MISMATCH'],
+      facts,
+      started_at: '2026-09-01',
+    }
+
+    const decision = decideSynthetic(facts, {
+      priorHashes: [{ run_id: 'run-9', invoice_number: 'WPM/2026/0009', file_hash: facts.file_hash! }],
+      parentRun: parent,
+    }).decision
+
+    expect(decision.verdict).toBe('BLOCK')
+    expect(decision.primary).toBe('EXACT_DUPLICATE')
+    expect(decision.reason_codes).toEqual(['EXACT_DUPLICATE'])
+    expect(decision.reason_codes).not.toContain('RESUBMISSION')
+  })
+
   it('a fresh date and reworded notes alone do not make a resubmission an amendment', () => {
     const parentFacts = syntheticInvoice({ po_reference: null })
     const parent: PriorRun = {

@@ -67,6 +67,22 @@ export const REASON_SENTENCE: Readonly<Record<ReasonCode, string>> = {
   LOW_CONFIDENCE_VENDOR_MATCH: 'The vendor name on the invoice is close to one we know, but not an exact match.',
 }
 
+/**
+ * A run that never reached a verdict.
+ *
+ * A failed run is not an outcome the rules produced, so it has no verdict and no
+ * reason code. It still has to read as something: the queue used to show it as
+ * "Not decided" with "No reason was recorded", which tells a person nothing they
+ * can act on.
+ */
+export const FAILED_RUN_LABEL = 'Failed'
+export const FAILED_RUN_SENTENCE = 'The file could not be read.'
+
+/** What a duplicate says about the invoice it repeats. */
+export function duplicateOfSentence(invoiceNumber: string, processedOn: string): string {
+  return `The same document as ${invoiceNumber}, which went through on ${processedOn}.`
+}
+
 export function reasonSentence(code: string): string {
   return REASON_SENTENCE[code as ReasonCode] ?? 'This check has no description yet.'
 }
@@ -77,6 +93,14 @@ export function verdictLabel(verdict: Verdict | null | undefined): string {
 
 export function verdictTone(verdict: Verdict | null | undefined): VerdictTone {
   return verdict ? VERDICT_TONE[verdict] : 'hold'
+}
+
+// The four outcomes, each in one sentence, for the page that explains the process.
+export const VERDICT_EXPLANATION: Readonly<Record<string, string>> = {
+  AUTO_APPROVE: 'Every check passed and the amount is within the limit, so nobody needs to look at it.',
+  REVIEW: 'Something is off by more than we allow, so a person decides whether to pay it.',
+  HOLD: 'Something we need is missing or unreadable, so it waits until that is resolved.',
+  BLOCK: 'Who would be paid, or what we would be paying twice, is wrong. It does not go through.',
 }
 
 // The seven stages, named as a person would describe them rather than by their

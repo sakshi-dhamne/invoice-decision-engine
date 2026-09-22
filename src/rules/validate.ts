@@ -504,21 +504,52 @@ export function checkUnitPrices(reconciliation: LineReconciliation, rules: RuleS
 // Cross-invoice
 // ---------------------------------------------------------------------------
 
+/**
+ * A document already processed, and when.
+ *
+ * `received_at` is what orders these against the document being decided. Only
+ * documents that arrived before it can make it a duplicate: the first copy of a
+ * file to arrive is the original however many times either is re-run, and
+ * re-deciding the original after a copy has landed must leave the original alone.
+ * Scoping by arrival is what makes both of those true, and it is the caller's job
+ * to pass only the earlier arrivals.
+ */
 export interface PriorRunHash {
   run_id: string
   invoice_number: string
   file_hash: string
+  // When the document arrived, and when its run settled. Both are for the
+  // duplicate's own explanation: a person needs to know which invoice this
+  // repeats and when that one went through.
+  received_at?: string | null
+  decided_at?: string | null
+}
+
+/**
+ * The earlier arrival of this exact file, if there is one.
+ *
+ * Needs the hash and nothing else, which is what lets stage 1 call it before the
+ * document has been read. Paying a model to read a file we have already read is
+ * money spent to learn nothing.
+ */
+export function findExactDuplicate(
+  fileHash: string | null | undefined,
+  priorHashes: readonly PriorRunHash[],
+): PriorRunHash | null {
+  if (!fileHash) return null
+  return priorHashes.find((entry) => entry.file_hash === fileHash) ?? null
 }
 
 // The same file, already processed.
 export function checkExactDuplicate(facts: InvoiceFacts, priorHashes: readonly PriorRunHash[]): CheckResult {
   if (!facts.file_hash) return skipped('no file hash available for this document')
 
-  const hit = priorHashes.find((entry) => entry.file_hash === facts.file_hash)
+  const hit = findExactDuplicate(facts.file_hash, priorHashes)
   const evidence: Evidence = {
     file_hash: facts.file_hash,
     prior_run_id: hit?.run_id ?? null,
     prior_invoice_number: hit?.invoice_number ?? null,
+    prior_decided_at: hit?.decided_at ?? null,
   }
 
   return hit ? fail('EXACT_DUPLICATE', evidence) : pass(evidence)

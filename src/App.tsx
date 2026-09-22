@@ -4,22 +4,31 @@ import { UploadProvider } from '@/components/UploadProvider.tsx'
 
 import Dashboard from '@/pages/Dashboard'
 import Decision from '@/pages/Decision'
+import Exceptions from '@/pages/Exceptions'
 import ExtractionHarness from '@/pages/ExtractionHarness'
-import NeedsYou from '@/pages/NeedsYou'
 import NotFound from '@/pages/NotFound'
+import Process from '@/pages/Process'
 import RunLive from '@/pages/RunLive'
 import Rules from '@/pages/Rules'
 import VendorNew from '@/pages/VendorNew'
+import Vendors from '@/pages/Vendors'
 
 function App() {
   return (
     <BrowserRouter>
       <UploadProvider>
       <Routes>
-        <Route path="/" element={<NeedsYou />} />
+        <Route path="/" element={<Exceptions />} />
         <Route path="/runs/:id" element={<RunLive />} />
         <Route path="/decisions/:id" element={<Decision />} />
+        <Route path="/vendors" element={<Vendors />} />
         <Route path="/vendors/new" element={<VendorNew />} />
+        <Route path="/controls" element={<Rules />} />
+        <Route path="/invoices" element={<Dashboard />} />
+        <Route path="/process" element={<Process />} />
+
+        {/* The names these pages used to live under, kept so an old link still
+            lands somewhere. */}
         <Route path="/rules" element={<Rules />} />
         <Route path="/dashboard" element={<Dashboard />} />
 

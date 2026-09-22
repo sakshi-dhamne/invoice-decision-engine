@@ -227,6 +227,31 @@ export function decide(ctx: DecisionContext): DecisionResult {
   }
 
   let matches = evaluate(ctx, false)
+
+  /**
+   * An exact duplicate is terminal.
+   *
+   * The same file, byte for byte, as one already processed. Nothing else about it
+   * is worth saying and nothing else about it is true: in particular it is not a
+   * resubmission, because a resubmission is a corrected version and an identical
+   * file has corrected nothing. Emitting both produced a decision that told the
+   * reader we had already processed this document and that it was a corrected
+   * version of one we held, in the same breath.
+   */
+  const duplicate = matches.find((match) => match.code === 'EXACT_DUPLICATE')
+  if (duplicate) {
+    evidence.EXACT_DUPLICATE = duplicate.evidence
+    return {
+      verdict: duplicate.verdict ?? 'BLOCK',
+      reason_codes: ['EXACT_DUPLICATE'],
+      primary: 'EXACT_DUPLICATE',
+      matched_rule: duplicate.rule,
+      matches: [duplicate],
+      evidence,
+      reevaluated: false,
+    }
+  }
+
   let reevaluated = false
   const carried: ReasonCode[] = []
 

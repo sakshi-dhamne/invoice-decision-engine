@@ -288,3 +288,69 @@ export async function getExtractionDurations(): Promise<number[]> {
   if (error) throw error
   return data.map((row) => row.duration_ms).filter((value): value is number => value !== null)
 }
+
+/**
+ * Files a duplicate away.
+ *
+ * The verdict and its reason code are left alone: the rules blocked a duplicate
+ * and that stays true. This records that a person has dealt with it, which is what
+ * takes it off the queue.
+ */
+export async function discardRun(runId: string, who: string): Promise<RunRow> {
+  const { data, error } = await supabase
+    .from('runs')
+    .update({ discarded_at: new Date().toISOString(), discarded_by: who })
+    .eq('id', runId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Vendors, with the orders they have open, for the vendor list.
+export async function getVendorsWithActivity(): Promise<{ vendor: VendorRow; openOrders: number }[]> {
+  const [vendors, orders] = await Promise.all([getVendors(), getPurchaseOrders()])
+  return vendors.map((vendor) => ({
+    vendor,
+    openOrders: orders.filter((order) => order.vendor_id === vendor.id && order.status === 'open').length,
+  }))
+}
+
+// The ingest stage's output for a set of runs. The queue needs it only for the
+// duplicates, which is where stage 1 records what the document repeats, so this is
+// asked for by run rather than loaded for everything.
+export async function getIngestOutputs(runIds: readonly string[]): Promise<Map<string, Json>> {
+  if (runIds.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('stage_logs')
+    .select('run_id, output')
+    .eq('stage', 'ingest')
+    .in('run_id', [...runIds])
+  if (error) throw error
+  const byRun = new Map<string, Json>()
+  for (const row of data) byRun.set(row.run_id, row.output)
+  return byRun
+}
+
+/**
+ * Removes a document that could not be read.
+ *
+ * A failed run decided nothing, so there is nothing on the record worth keeping:
+ * no verdict, no reason, no checks. The run and the invoice row both go, which is
+ * what "remove" has to mean for the queue to be honest about it. The stage logs go
+ * with the run, which cascades.
+ */
+export async function removeFailedRun(runId: string, invoiceId: string | null): Promise<void> {
+  const { error: runError } = await supabase.from('runs').delete().eq('id', runId)
+  if (runError) throw runError
+  if (!invoiceId) return
+
+  // Only when nothing else points at the document. A re-run that succeeded is
+  // worth keeping, and so is the invoice it decided.
+  const { data: remaining, error: countError } = await supabase.from('runs').select('id').eq('invoice_id', invoiceId)
+  if (countError) throw countError
+  if (remaining.length > 0) return
+
+  const { error: invoiceError } = await supabase.from('invoices').delete().eq('id', invoiceId)
+  if (invoiceError) throw invoiceError
+}

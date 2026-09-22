@@ -58,13 +58,17 @@ uniformity ceiling).
 
 | Route | What it is |
 |---|---|
-| `/` | The queue on the left, the selected invoice on the right. Choosing a row changes the pane, not the route; the selection lives in `?invoice=`. `j` and `k` move, `Enter` opens the document, `a` approves, `Esc` clears |
+| `/` | Exceptions. The list on the left, the selected invoice on the right. Choosing a row changes the pane, not the route; the selection lives in `?invoice=…&run=…`, keyed on the run because invoice numbers repeat. `j` and `k` move, `Enter` opens the document, `a` acts, `Esc` clears |
+| `/invoices` | Every invoice, filterable by outcome, vendor and date, with sortable columns |
+| `/vendors` | The approved vendor list, with status and when each was added |
+| `/controls` | The thresholds, and the order the checks run in |
+| `/process` | The seven stages, the principle, and what each outcome means |
 | `/runs/:id` | The seven stages lighting up as they execute, over Supabase Realtime |
 | `/decisions/:id` | The same detail pane as a full page, for linking to |
 | `/vendors/new?from=:runId` | Onboarding a vendor an invoice was held for |
-| `/rules` | The thresholds, and the order the checks run in |
-| `/dashboard` | Every run, filterable, with the figures across the top |
 | `/harness` | The development harness. Not part of the product, and unchanged |
+
+`/rules` and `/dashboard` still resolve, so older links land somewhere.
 
 The detail pane has three tabs. **Decision** is the verdict, the disputed figures
 side by side, and why. **Document** renders the page itself with `pdfjs-dist`,
@@ -94,8 +98,8 @@ npm run lint
 
 Database setup: run `supabase/migrations/001…005` in order in the Supabase SQL
 editor, then `007_storage.sql` (the bucket uploaded documents go to, PDFs and
-photographs alike) and
-`008_product_columns.sql` (three columns the screens need). The edge functions in
+photographs alike), `008_product_columns.sql` (three columns the screens need) and
+`009_discard.sql` (two more, for filing a duplicate away). The edge functions in
 `supabase/functions/` are deployed by hand and read `GEMINI_API_KEY` /
 `ANTHROPIC_API_KEY` from the function environment, so no key ever reaches the
 browser.

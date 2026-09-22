@@ -8,8 +8,8 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 import { evidenceValue, humanKey, isInternalKey } from '@/lib/format.ts'
-import { reasonSentence, verdictLabel, verdictTone } from '@/lib/reasonCopy.ts'
-import type { Verdict } from '@/lib/database.types.ts'
+import { FAILED_RUN_LABEL, reasonSentence, verdictLabel, verdictTone } from '@/lib/reasonCopy.ts'
+import type { RunRow, Verdict } from '@/lib/database.types.ts'
 import { tone } from './tone.ts'
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,41 @@ export function VerdictChip({
       {verdictLabel(verdict)}
     </span>
   )
+}
+
+/**
+ * The chip for a run, rather than for a verdict.
+ *
+ * A run that failed never reached a verdict, so `verdictLabel` had nothing to
+ * render and fell back to "Not decided", which tells a person nothing. A failure
+ * is its own outcome and reads as one.
+ */
+export function OutcomeChip({
+  run,
+  size = 'md',
+  className,
+}: {
+  run: Pick<RunRow, 'status' | 'verdict'>
+  size?: 'sm' | 'md' | 'lg'
+  className?: string
+}) {
+  if (run.status === 'failed') {
+    return (
+      <span
+        className={cn(
+          'inline-flex shrink-0 items-center rounded-full font-medium',
+          size === 'sm' && 'px-1.5 py-0 text-xs',
+          size === 'md' && 'px-2.5 py-1 text-sm',
+          size === 'lg' && 'px-3.5 py-1.5 text-base',
+          tone('block').chip,
+          className,
+        )}
+      >
+        {FAILED_RUN_LABEL}
+      </span>
+    )
+  }
+  return <VerdictChip verdict={run.verdict} size={size} className={className} />
 }
 
 // ---------------------------------------------------------------------------
