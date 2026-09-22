@@ -103,6 +103,10 @@ export type RunRow = {
   touched_by_human: boolean
   // Who overrode the verdict, when someone did.
   touched_by: string | null
+  // Set when a person filed a duplicate away. The verdict and reason codes stay
+  // exactly as the rules left them; this is an extra fact about the run.
+  discarded_at: string | null
+  discarded_by: string | null
 }
 
 export type RunInsert = Partial<RunRow>

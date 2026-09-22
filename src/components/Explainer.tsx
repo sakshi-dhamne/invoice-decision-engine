@@ -50,7 +50,7 @@ export function Explainer({ onDismiss, onUpload }: { onDismiss: () => void; onUp
         >
           Upload an invoice
         </button>
-        <Link to="/rules" className="text-sm font-medium text-ink underline underline-offset-4">
+        <Link to="/process" className="text-sm font-medium text-ink underline underline-offset-4">
           See the rules
         </Link>
       </div>

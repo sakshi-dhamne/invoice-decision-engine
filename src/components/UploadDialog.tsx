@@ -165,9 +165,13 @@ export function UploadDialog({
     setDragging(false)
   }
 
-  const readable = items.filter((item) => item.state !== 'rejected')
   const waiting = items.filter((item) => item.state === 'waiting').length
-  const decided = items.filter((item) => item.state === 'decided')
+  const decided = items.filter((item) => item.state === 'decided').length
+  // A file that failed on the way through is not waiting to be read and is not a
+  // file we refused: it is one that could not be read. Counting it as ready is how
+  // the footer came to say "1 ready, 0 cannot be read" beside a visible error.
+  const unreadable = items.filter((item) => item.state === 'rejected' || item.state === 'failed').length
+  const inFlight = items.filter((item) => item.state === 'saving' || item.state === 'reading').length
   const blockClasses = tone('block')
 
   return (
@@ -287,9 +291,15 @@ export function UploadDialog({
         <DialogFooter className="items-center sm:justify-between">
           <p className="text-xs text-muted tnum">
             {running
-              ? `Reading ${count(decided.length + 1)} of ${count(readable.length)}`
+              ? `${count(decided)} read, ${count(inFlight)} in progress, ${count(waiting)} waiting`
               : items.length > 0
-                ? `${count(readable.length)} ready, ${count(items.length - readable.length)} cannot be read`
+                ? [
+                    waiting > 0 ? `${count(waiting)} ready` : null,
+                    decided > 0 ? `${count(decided)} read` : null,
+                    unreadable > 0 ? `${count(unreadable)} could not be read` : null,
+                  ]
+                    .filter((part): part is string => part !== null)
+                    .join(', ')
                 : ''}
           </p>
           <span className="flex gap-2">

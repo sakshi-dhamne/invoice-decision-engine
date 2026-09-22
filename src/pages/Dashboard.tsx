@@ -2,24 +2,40 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ChevronUp } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
 import {
   EmptyState,
   ErrorNote,
   Loading,
+  OutcomeChip,
+  PageBody,
   Panel,
   PanelHeading,
-  PageBody,
   Statistic,
-  VerdictChip,
 } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { cn } from '@/lib/utils'
 import { count, duration, money, percent, shortDate } from '@/lib/format.ts'
-import { loadFeed, matchesSearch, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
+import {
+  hasFailed,
+  loadFeed,
+  matchesSearch,
+  sortRows,
+  vendorNameFor,
+  type FeedRow,
+  type SortDirection,
+  type SortKey,
+} from '@/lib/feed.ts'
 import { getExtractionDurations } from '@/lib/queries.ts'
-import { reasonSentence, VERDICT_LABEL, verdictTone } from '@/lib/reasonCopy.ts'
+import {
+  duplicateOfSentence,
+  FAILED_RUN_SENTENCE,
+  reasonSentence,
+  VERDICT_LABEL,
+  verdictTone,
+} from '@/lib/reasonCopy.ts'
 import { DECISION_RULES } from '@/rules/decide.ts'
 import type { Verdict } from '@/lib/database.types.ts'
 
@@ -30,13 +46,14 @@ const VERDICT_BY_CODE = new Map<string, Verdict>(
   DECISION_RULES.flatMap((row) => (row.verdict ? [[row.code, row.verdict] as const] : [])),
 )
 
-const FILTERS: { value: Verdict | 'all'; label: string }[] = [
+const FILTERS: { value: Verdict | 'all' | 'failed'; label: string }[] = [
   { value: 'all', label: 'Everything' },
   { value: 'AUTO_APPROVE', label: VERDICT_LABEL.AUTO_APPROVE },
   { value: 'REVIEW', label: VERDICT_LABEL.REVIEW },
   { value: 'HOLD', label: VERDICT_LABEL.HOLD },
   { value: 'BLOCK', label: VERDICT_LABEL.BLOCK },
   { value: 'ROUTED_NOT_PAID', label: VERDICT_LABEL.ROUTED_NOT_PAID },
+  { value: 'failed', label: 'Failed' },
 ]
 
 function median(values: number[]): number | null {
@@ -50,8 +67,12 @@ export default function Dashboard() {
   const [rows, setRows] = useState<FeedRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<Verdict | 'all'>('all')
+  const [filter, setFilter] = useState<Verdict | 'all' | 'failed'>('all')
   const [readDurations, setReadDurations] = useState<number[]>([])
+  const [vendorFilter, setVendorFilter] = useState('all')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' })
 
   const load = useCallback(async () => {
     try {
@@ -113,20 +134,39 @@ export default function Dashboard() {
 
   const mostFrequent = stoppedBy[0]?.[1] ?? 1
 
-  const visible = useMemo(
-    () =>
-      (rows ?? []).filter(
-        (row) => (filter === 'all' || row.run.verdict === filter) && matchesSearch(row, search),
-      ),
-    [rows, filter, search],
+  const vendorOptions = useMemo(
+    () => [...new Set((rows ?? []).map(vendorNameFor))].sort((a, b) => a.localeCompare(b)),
+    [rows],
   )
+
+  const visible = useMemo(() => {
+    const matched = (rows ?? []).filter((row) => {
+      if (!matchesSearch(row, search)) return false
+      if (filter === 'failed' && !hasFailed(row.run)) return false
+      if (filter !== 'all' && filter !== 'failed' && row.run.verdict !== filter) return false
+      if (vendorFilter !== 'all' && vendorNameFor(row) !== vendorFilter) return false
+      const date = row.invoice?.invoice_date ?? ''
+      if (fromDate && date < fromDate) return false
+      if (toDate && date > toDate) return false
+      return true
+    })
+    return sortRows(matched, sort.key, sort.direction)
+  }, [rows, filter, search, vendorFilter, fromDate, toDate, sort])
+
+  // Clicking a heading sorts by it, and clicking it again turns the order around.
+  const toggleSort = (key: SortKey) =>
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: key === 'amount' || key === 'date' ? 'desc' : 'asc' },
+    )
 
   return (
     <AppShell>
       <PageBody>
         <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-ink">All runs</h1>
+          <h1 className="text-2xl font-semibold text-ink">Invoices</h1>
           <div>
             <label htmlFor="runs-search" className="sr-only">
               Search invoices and vendors
@@ -196,24 +236,85 @@ export default function Dashboard() {
               ))}
             </div>
 
+            <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-5 py-2.5">
+              <label htmlFor="runs-vendor" className="text-xs text-muted">
+                Vendor
+              </label>
+              <select
+                id="runs-vendor"
+                value={vendorFilter}
+                onChange={(event) => setVendorFilter(event.target.value)}
+                className="h-8 max-w-[14rem] rounded-md border border-line bg-surface px-2 text-sm text-ink"
+              >
+                <option value="all">Every vendor</option>
+                {vendorOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="runs-from" className="ml-2 text-xs text-muted">
+                Dated from
+              </label>
+              <input
+                id="runs-from"
+                type="date"
+                value={fromDate}
+                onChange={(event) => setFromDate(event.target.value)}
+                className="h-8 rounded-md border border-line bg-surface px-2 text-sm text-ink"
+              />
+              <label htmlFor="runs-to" className="text-xs text-muted">
+                to
+              </label>
+              <input
+                id="runs-to"
+                type="date"
+                value={toDate}
+                onChange={(event) => setToDate(event.target.value)}
+                className="h-8 rounded-md border border-line bg-surface px-2 text-sm text-ink"
+              />
+            </div>
+
             {rows === null ? (
-              <Loading>Loading the runs</Loading>
+              <Loading>Loading the invoices</Loading>
             ) : visible.length === 0 ? (
               <EmptyState>
-                No run matches these filters. Choose a different outcome, or clear the search.
+                No invoice matches these filters. Widen them, or clear the search.
               </EmptyState>
             ) : (
               <div className="overflow-x-auto">
                 <div className="min-w-[820px]">
-                  <div
-                    className="grid grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem] gap-4 border-b border-line-soft px-5 py-2.5 text-xs font-medium text-muted"
-                    aria-hidden="true"
-                  >
-                    <span>Outcome</span>
-                    <span>Invoice</span>
-                    <span>Vendor</span>
-                    <span className="text-right">Amount</span>
-                    <span className="text-right">Date</span>
+                  <div className="grid grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem] gap-4 border-b border-line-soft px-5 py-1.5">
+                    {(
+                      [
+                        ['outcome', 'Outcome', 'left'],
+                        ['invoice', 'Invoice', 'left'],
+                        ['vendor', 'Vendor', 'left'],
+                        ['amount', 'Amount', 'right'],
+                        ['date', 'Date', 'right'],
+                      ] as [SortKey, string, 'left' | 'right'][]
+                    ).map(([key, label, align]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggleSort(key)}
+                        aria-sort={sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                        className={cn(
+                          'flex items-center gap-1 text-[11px] tracking-wide transition-colors hover:text-ink',
+                          align === 'right' && 'justify-end',
+                          sort.key === key ? 'text-ink' : 'text-faint',
+                        )}
+                      >
+                        {label}
+                        {sort.key === key ? (
+                          <ChevronUp
+                            className={cn('size-3', sort.direction === 'desc' && 'rotate-180')}
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                      </button>
+                    ))}
                   </div>
 
                   <ul>
@@ -223,13 +324,22 @@ export default function Dashboard() {
                           to={`/decisions/${row.run.id}`}
                           className="grid grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem] items-start gap-4 px-5 py-3.5 transition-colors hover:bg-line-soft/60"
                         >
-                          <VerdictChip verdict={row.run.verdict} size="sm" />
+                          <OutcomeChip run={row.run} size="sm" />
                           <span className="min-w-0">
                             <span className="identifier block text-sm text-ink">
                               {row.invoice?.invoice_number ?? 'Not read yet'}
                             </span>
                             <span className="mt-0.5 block truncate text-sm text-muted">
-                              {row.primaryCode ? reasonSentence(row.primaryCode) : 'No reason was recorded.'}
+                              {hasFailed(row.run)
+                                ? FAILED_RUN_SENTENCE
+                                : row.duplicateOf
+                                  ? duplicateOfSentence(
+                                      row.duplicateOf.invoiceNumber,
+                                      shortDate(row.duplicateOf.decidedAt ?? row.run.started_at),
+                                    )
+                                  : row.primaryCode
+                                    ? reasonSentence(row.primaryCode)
+                                    : FAILED_RUN_SENTENCE}
                             </span>
                           </span>
                           <span className="truncate text-sm text-ink-soft">{vendorNameFor(row)}</span>

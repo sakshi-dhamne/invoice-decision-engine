@@ -13,6 +13,8 @@ import { describe, expect, it } from 'vitest'
 
 import { REASON_SENTENCE, VERDICT_LABEL } from '../src/lib/reasonCopy.ts'
 import { INTERNAL_KEYS } from '../src/lib/format.ts'
+import { FAILED_RUN_LABEL, FAILED_RUN_SENTENCE } from '../src/lib/reasonCopy.ts'
+import { rowForShortId } from '../src/lib/feed.ts'
 import { BUSINESS_DIFF_FIELDS } from '../src/lib/decisionData.ts'
 import { EXPLAIN_PROMPT, fallbackExplanation } from '../src/rules/explain.ts'
 import { REASON_CODES } from '../src/rules/types.ts'
@@ -195,6 +197,73 @@ describe('explanations are written to the reader', () => {
     expect(text.split(/\s+/).length).toBeLessThan(60)
     // The problem comes first, the outcome second.
     expect(text.indexOf('approved vendor') === -1 || text.indexOf('on hold') > 0).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Lists are keyed on the run, not on the invoice number
+// ---------------------------------------------------------------------------
+
+// Invoice numbers repeat. A resubmission carries the number of the document it
+// corrects, and so does every copy of a file somebody forwards twice. Keying a
+// list on the number highlighted both records and opened neither.
+describe('a row is identified by its run', () => {
+  const exceptions = readFileSync(join(repoRoot, 'src/pages/Exceptions.tsx'), 'utf8')
+  const palette = readFileSync(join(repoRoot, 'src/components/CommandPalette.tsx'), 'utf8')
+
+  it('resolves the selection from the run in the URL', () => {
+    expect(exceptions).toContain("rowForShortId(queue, params.get('run'))")
+    // Not by looking the number up, which is what could match twice.
+    expect(exceptions).not.toMatch(/findIndex\([^)]*invoice_number === /)
+  })
+
+  it('writes both the number and the run into the URL', () => {
+    expect(exceptions).toContain("next.set('run', shortRunId(row.run.id))")
+    expect(exceptions).toContain("next.set('invoice', row.invoice.invoice_number)")
+  })
+
+  it('highlights on the run', () => {
+    expect(exceptions).toContain('selected?.run.id === row.run.id')
+  })
+
+  it('refuses to guess when a short run id matches more than one row', () => {
+    const rows = [
+      { run: { id: 'abcd1234-aaaa' } },
+      { run: { id: 'abcd1234-bbbb' } },
+    ] as unknown as Parameters<typeof rowForShortId>[0]
+    expect(rowForShortId(rows, 'abcd1234')).toBeNull()
+    expect(rowForShortId(rows, 'abcd1234-a')?.run.id).toBe('abcd1234-aaaa')
+  })
+
+  it('carries the run in the palette link too', () => {
+    expect(palette).toContain('run=${shortRunId(row.run.id)}')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The words on the stage notes
+// ---------------------------------------------------------------------------
+
+describe('how it ran reads as English', () => {
+  const pipeline = readFileSync(join(repoRoot, 'src/lib/pipeline.ts'), 'utf8')
+  // Only the strings, so a comment explaining the old wording does not fail this.
+  const strings = [...pipeline.matchAll(/'([^'\n]{12,})'|`([^`\n]{12,})`/g)]
+    .map((match) => match[1] ?? match[2])
+    .join('\n')
+
+  it.each([
+    ['content-hashed', /content-hashed/],
+    ['stood down', /stood down/],
+    ['a raw check-name list', /Failed: \$\{/],
+    ['a rule number and an arrow', /Rule \$\{[^}]*matched_rule/],
+    ['a score to three decimals', /toFixed\(3\)/],
+  ])('says nothing about %s', (_label, pattern) => {
+    expect(pattern.test(strings)).toBe(false)
+  })
+
+  it('gives a failed run something to say', () => {
+    expect(FAILED_RUN_LABEL).toBe('Failed')
+    expect(FAILED_RUN_SENTENCE).toBe('The file could not be read.')
   })
 })
 

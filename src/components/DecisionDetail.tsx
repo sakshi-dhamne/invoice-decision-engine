@@ -5,20 +5,30 @@
 // what was read off it. History is the trail, and the only place in the product
 // where an internal identifier appears.
 
-import { useCallback, useEffect, useState, type MutableRefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, Copy } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { dateAndTime, evidenceValue, humanKey, money, shortDate } from '@/lib/format.ts'
-import { reasonSentence, verdictTone } from '@/lib/reasonCopy.ts'
+import { dateAndTime, evidenceValue, fileNameOf, humanKey, money, shortDate } from '@/lib/format.ts'
+import { duplicateOfSentence, FAILED_RUN_SENTENCE, reasonSentence, verdictTone } from '@/lib/reasonCopy.ts'
 import { loadDecision, readFields, type DecisionData, type OrderLine } from '@/lib/decisionData.ts'
-import { recordOverride } from '@/lib/queries.ts'
+import { discardRun, recordOverride, removeFailedRun } from '@/lib/queries.ts'
+import { duplicateFromStages } from '@/lib/feed.ts'
 import { AskVendorDialog } from './AskVendorDialog.tsx'
+import { DiscardDialog } from './DiscardDialog.tsx'
 import { DocumentViewer } from './DocumentViewer.tsx'
 import { OverrideDialog } from './OverrideDialog.tsx'
-import { EmptyState, ErrorNote, LabelValueGrid, Loading, Panel, PanelHeading, VerdictChip } from './Primitives.tsx'
+import {
+  EmptyState,
+  ErrorNote,
+  LabelValueGrid,
+  Loading,
+  OutcomeChip,
+  Panel,
+  PanelHeading,
+} from './Primitives.tsx'
 import { tone } from './tone.ts'
 
 export type DetailTab = 'decision' | 'document' | 'history'
@@ -31,16 +41,22 @@ const TABS: { id: DetailTab; label: string }[] = [
 
 export interface DecisionDetailHandle {
   openDocument: () => void
-  approve: () => void
+  // The primary action for whatever this is. Approving an exception, or filing a
+  // duplicate away: the keyboard should not have to know which.
+  act: () => void
 }
 
 export function DecisionDetail({
   runId,
   onChanged,
+  onRemoved,
   handleRef,
 }: {
   runId: string | null
   onChanged?: () => void
+  // Fired when the record this pane was showing no longer exists, so the list can
+  // move the selection somewhere that does.
+  onRemoved?: () => void
   // Lets the queue drive this pane from the keyboard without owning its state.
   handleRef?: MutableRefObject<DecisionDetailHandle | null>
 }) {
@@ -51,7 +67,12 @@ export function DecisionDetail({
   const [selectedField, setSelectedField] = useState<string | null>(null)
   const [askOpen, setAskOpen] = useState(false)
   const [overrideOpen, setOverrideOpen] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  // Read by the keyboard handler, which is registered once and must not close over
+  // a stale idea of what this invoice is.
+  const duplicateRef = useRef(false)
 
   const load = useCallback(async () => {
     if (!runId) {
@@ -81,13 +102,34 @@ export function DecisionDetail({
     if (!handleRef) return
     handleRef.current = {
       openDocument: () => setTab('document'),
-      approve: () => setOverrideOpen(true),
+      act: () => (duplicateRef.current ? setDiscardOpen(true) : setOverrideOpen(true)),
     }
   }, [handleRef])
 
   const saveOverride = async (who: string) => {
     if (!data) return
     await recordOverride(data.run.id, who)
+    await load()
+    onChanged?.()
+  }
+
+  const remove = async () => {
+    if (!data) return
+    setRemoving(true)
+    try {
+      await removeFailedRun(data.run.id, data.run.invoice_id)
+      onRemoved?.()
+      onChanged?.()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'This could not be removed. Try again in a moment.')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  const saveDiscard = async (who: string) => {
+    if (!data) return
+    await discardRun(data.run.id, who)
     await load()
     onChanged?.()
   }
@@ -143,27 +185,54 @@ export function DecisionDetail({
   const orderLines: OrderLine[] = Array.isArray(data.order?.line_items) ? (data.order.line_items as OrderLine[]) : []
   const selected = fields.find((field) => field.key === selectedField) ?? null
 
+  const duplicateOf = duplicateFromStages(data.stages)
+  const isDuplicate = data.codes.includes('EXACT_DUPLICATE')
+  const failed = data.run.status === 'failed'
+  duplicateRef.current = isDuplicate
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: what it is, what was decided, what you can do about it. */}
       <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-5 py-3">
-        <VerdictChip verdict={data.run.verdict} />
+        <OutcomeChip run={data.run} />
         <h2 className="identifier text-base font-medium text-ink">
           {data.invoice?.invoice_number ?? 'This invoice'}
         </h2>
         <span className="text-sm text-muted">{data.vendor?.legal_name ?? data.invoice?.vendor_name_as_printed ?? ''}</span>
         <span className="ml-auto flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setAskOpen(true)}>
-            Ask the vendor
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => setOverrideOpen(true)}
-            disabled={data.run.touched_by_human}
-          >
-            {data.run.touched_by_human ? 'Approved by a person' : 'Override and approve'}
-          </Button>
+          {failed ? (
+            /* Nothing was decided, so there is nothing to approve or question.
+               The only useful move is to take it off the list. */
+            <Button type="button" size="sm" variant="outline" onClick={remove} disabled={removing}>
+              {removing ? 'Removing' : 'Remove'}
+            </Button>
+          ) : isDuplicate ? (
+            /* There is nothing to ask the vendor about a document we have already
+               been through, and approving it would pay the same invoice twice,
+               which is the thing the check exists to prevent. One action. */
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setDiscardOpen(true)}
+              disabled={data.run.discarded_at !== null}
+            >
+              {data.run.discarded_at !== null ? 'Discarded' : 'Discard duplicate'}
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAskOpen(true)}>
+                Ask the vendor
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setOverrideOpen(true)}
+                disabled={data.run.touched_by_human}
+              >
+                {data.run.touched_by_human ? 'Approved by a person' : 'Override and approve'}
+              </Button>
+            </>
+          )}
         </span>
       </div>
 
@@ -191,11 +260,39 @@ export function DecisionDetail({
       <div className="min-h-0 flex-1 overflow-auto bg-ground p-4">
         {tab === 'decision' ? (
           <div className="space-y-4">
-            {/* The verdict card. Reason codes appear here and nowhere else. */}
+            {failed ? (
+              <Panel className={cn('border-l-4 px-5 py-4', tone('block').border)}>
+                <p className="prose-serif max-w-[72ch] text-[17px] text-ink-soft">{FAILED_RUN_SENTENCE}</p>
+                <p className="mt-2 text-sm text-muted">
+                  Nothing was decided about it, so there is nothing to approve or question. Remove it and send the
+                  document again.
+                </p>
+              </Panel>
+            ) : null}
+
+            {/* The verdict card. Reason codes appear here and nowhere else.
+                A duplicate's card says which invoice it repeats and links to it,
+                in place of an explanation that would only say the same thing in
+                looser words. */}
             <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
               <p className="prose-serif max-w-[72ch] text-[17px] text-ink-soft">
-                {data.run.explanation ?? 'No explanation was recorded for this run.'}
+                {duplicateOf
+                  ? duplicateOfSentence(
+                      duplicateOf.invoiceNumber,
+                      shortDate(duplicateOf.decidedAt ?? data.run.started_at),
+                    )
+                  : (data.run.explanation ?? 'No explanation was recorded for this run.')}
               </p>
+
+              {duplicateOf?.runId ? (
+                <Link
+                  to={`/decisions/${duplicateOf.runId}`}
+                  className="mt-2 inline-block text-sm text-ink underline underline-offset-4"
+                >
+                  Open {duplicateOf.invoiceNumber}
+                </Link>
+              ) : null}
+
               <div className="mt-4 flex flex-wrap gap-1.5">
                 {data.codes.map((code) => (
                   <span
@@ -465,6 +562,7 @@ export function DecisionDetail({
                     ['Run', data.run.id],
                     ['Invoice record', data.invoice?.id ?? 'None'],
                     ['Document hash', data.invoice?.file_hash ?? 'None'],
+                    ['File', fileNameOf(data.invoice) ?? 'None'],
                     ['Stored at', data.invoice?.storage_path ?? data.invoice?.file_path ?? 'None'],
                   ].map(([label, value]) => (
                     <div key={label}>
@@ -494,6 +592,12 @@ export function DecisionDetail({
       </div>
 
       <AskVendorDialog open={askOpen} onOpenChange={setAskOpen} data={data} />
+      <DiscardDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        duplicateOf={duplicateOf?.invoiceNumber ?? null}
+        onConfirm={saveDiscard}
+      />
       <OverrideDialog
         open={overrideOpen}
         onOpenChange={setOverrideOpen}

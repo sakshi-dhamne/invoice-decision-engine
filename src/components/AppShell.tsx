@@ -5,36 +5,37 @@
 // screen, not floating in the middle of it.
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutList, Moon, ScrollText, Sliders, Sun, Upload } from 'lucide-react'
+import { Link, useLocation } from 'react-router-dom'
+import { Building2, GitBranch, LayoutList, Moon, ScrollText, Sliders, Sun, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { count } from '@/lib/format.ts'
-import { applyTheme, readTheme, restoreExplainer, storeTheme, type Theme } from '@/lib/localSettings.ts'
+import { applyTheme, readTheme, storeTheme, type Theme } from '@/lib/localSettings.ts'
 import { CommandPalette } from './CommandPalette.tsx'
 import { useUpload } from './uploadContext.ts'
 import { Spinner } from './Primitives.tsx'
 
 const NAV = [
-  { to: '/', label: 'Needs you', icon: LayoutList },
-  { to: '/dashboard', label: 'All runs', icon: ScrollText },
-  { to: '/rules', label: 'Rules', icon: Sliders },
+  { to: '/', label: 'Exceptions', icon: LayoutList },
+  { to: '/invoices', label: 'Invoices', icon: ScrollText },
+  { to: '/vendors', label: 'Vendors', icon: Building2 },
+  { to: '/controls', label: 'Controls', icon: Sliders },
+  { to: '/process', label: 'Process', icon: GitBranch },
 ]
 
 export function AppShell({
   children,
-  waitingCount,
+  openExceptions,
 }: {
   children: ReactNode
-  // Shown as a badge beside "Needs you" when the page that knows it says so.
-  waitingCount?: number
+  // Shown as a badge beside Exceptions when the page that knows the count says so.
+  openExceptions?: number
 }) {
   const [theme, setTheme] = useState<Theme>(readTheme)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const { openUpload, progress } = useUpload()
   const location = useLocation()
-  const navigate = useNavigate()
 
   useEffect(() => {
     applyTheme(theme)
@@ -47,14 +48,6 @@ export function AppShell({
       return next
     })
   }, [])
-
-  // Reopening the explainer clears the stored flag and sends the reader to the
-  // page that shows it.
-  const showHowItWorks = () => {
-    restoreExplainer()
-    if (location.pathname === '/') window.location.reload()
-    else navigate('/')
-  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -93,25 +86,15 @@ export function AppShell({
                   >
                     <Icon className="size-4 shrink-0" aria-hidden="true" />
                     <span className="flex-1">{item.label}</span>
-                    {item.to === '/' && waitingCount != null && waitingCount > 0 ? (
+                    {item.to === '/' && openExceptions != null && openExceptions > 0 ? (
                       <span className="rounded-full bg-line-soft px-1.5 py-0.5 text-xs text-ink-soft tnum">
-                        {count(waitingCount)}
+                        {count(openExceptions)}
                       </span>
                     ) : null}
                   </Link>
                 </li>
               )
             })}
-            <li>
-              <button
-                type="button"
-                onClick={showHowItWorks}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:text-ink"
-              >
-                <span className="size-4 shrink-0" aria-hidden="true" />
-                How it works
-              </button>
-            </li>
           </ul>
 
           {progress ? (

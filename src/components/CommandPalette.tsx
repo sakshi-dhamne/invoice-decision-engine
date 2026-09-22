@@ -7,14 +7,17 @@ import { useEffect, useState } from 'react'
 import { Command } from 'cmdk'
 import { useNavigate } from 'react-router-dom'
 
-import { loadFeed, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
+import { loadFeed, shortRunId, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
 import { money } from '@/lib/format.ts'
-import { verdictLabel } from '@/lib/reasonCopy.ts'
+import { FAILED_RUN_LABEL, verdictLabel } from '@/lib/reasonCopy.ts'
+
 
 const ROUTES = [
-  { label: 'Go to what needs you', to: '/' },
-  { label: 'Go to all runs', to: '/dashboard' },
-  { label: 'Go to the rules', to: '/rules' },
+  { label: 'Go to exceptions', to: '/' },
+  { label: 'Go to invoices', to: '/invoices' },
+  { label: 'Go to vendors', to: '/vendors' },
+  { label: 'Go to controls', to: '/controls' },
+  { label: 'Go to the process', to: '/process' },
 ]
 
 export function CommandPalette({
@@ -70,9 +73,12 @@ export function CommandPalette({
               value={`${row.invoice?.invoice_number ?? ''} ${vendorNameFor(row)} ${row.invoice?.po_reference ?? ''}`}
               onSelect={() =>
                 run(() =>
+                  // Keyed on the run, like every other link to a record. The number
+                  // is there so the URL reads as something; it does not identify
+                  // anything on its own.
                   navigate(
                     row.invoice?.invoice_number
-                      ? `/?invoice=${encodeURIComponent(row.invoice.invoice_number)}`
+                      ? `/?invoice=${encodeURIComponent(row.invoice.invoice_number)}&run=${shortRunId(row.run.id)}`
                       : `/decisions/${row.run.id}`,
                   ),
                 )
@@ -84,7 +90,9 @@ export function CommandPalette({
               </span>
               <span className="min-w-0 flex-1 truncate">{vendorNameFor(row)}</span>
               <span className="shrink-0 tnum">{money(row.invoice?.total, row.invoice?.currency ?? 'INR')}</span>
-              <span className="w-16 shrink-0 text-right text-xs text-muted">{verdictLabel(row.run.verdict)}</span>
+              <span className="w-16 shrink-0 text-right text-xs text-muted">
+                {row.run.status === 'failed' ? FAILED_RUN_LABEL : verdictLabel(row.run.verdict)}
+              </span>
             </Command.Item>
           ))}
         </Command.Group>
