@@ -78,6 +78,24 @@ export const REASON_SENTENCE: Readonly<Record<ReasonCode, string>> = {
 export const FAILED_RUN_LABEL = 'Failed'
 export const FAILED_RUN_SENTENCE = 'The file could not be read.'
 
+// ---------------------------------------------------------------------------
+// Approved by a person
+// ---------------------------------------------------------------------------
+
+/**
+ * An invoice the rules stopped and a person passed.
+ *
+ * It reads as approved, because it is, and it says who did so nobody mistakes it
+ * for the rules having cleared it. The label is the chip; the sentence says what
+ * the rules had decided, which is the thing the reader actually wants to know.
+ */
+export const APPROVED_BY_PERSON_LABEL = 'Approved by a person'
+
+export function approvedByPersonSentence(who: string, when: string, rulesVerdict: Verdict | null): string {
+  const outcome = rulesVerdict ? VERDICT_LABEL[rulesVerdict].toLowerCase() : 'stopped'
+  return `${who} approved this on ${when}. The checks had ${outcome} it, and that is still what they found.`
+}
+
 /** What a duplicate says about the invoice it repeats. */
 export function duplicateOfSentence(invoiceNumber: string, processedOn: string): string {
   return `The same document as ${invoiceNumber}, which went through on ${processedOn}.`
@@ -237,9 +255,36 @@ export function bankChangedRecentlySentence(days: number): string {
 
 export const BANK_CHANGED_RECENTLY_LABEL = 'Recently changed bank account'
 
+/**
+ * What to say when the hold has already been answered.
+ *
+ * A run records what was true when it was decided. A vendor added since then does
+ * not change that record, and should not: the invoice was genuinely held because
+ * we did not know the company. But offering to add a company that is already on
+ * the list is an action that cannot work, and the reader is left to work out why.
+ */
+export function vendorAddedSinceSentence(legalName: string): string {
+  return `${legalName} is on the approved vendor list now, added after this invoice was held. Check the invoice again and it will be decided against the vendor we hold.`
+}
+
 // The out-of-band confirmation, wherever it is shown.
 export const BANK_CONFIRMED_LABEL = 'Who confirmed these details'
 export const BANK_CONFIRMED_MISSING = 'Nobody is recorded as having confirmed this account.'
+
+/**
+ * A vendor nobody added, because it came with the corpus.
+ *
+ * `added_by` is null on every vendor that was seeded, and on nothing else: the
+ * onboarding form has required a name since it started writing the column. Reading
+ * that null as "by somebody not recorded" accused the starting data of a lapse
+ * that never happened, on most of the list.
+ */
+export const VENDOR_FROM_SEED = 'Added with the starting data'
+
+export function vendorAddedBy(addedBy: string | null | undefined): string {
+  const name = addedBy?.trim() ?? ''
+  return name.length > 0 ? `Added by ${name}` : VENDOR_FROM_SEED
+}
 
 // The change history on a vendor.
 export const VENDOR_HISTORY_EMPTY = 'Nothing has been changed since this vendor was added.'

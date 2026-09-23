@@ -101,9 +101,11 @@ editor, then `007_storage.sql` (the bucket uploaded documents go to, PDFs and
 photographs alike), `008_product_columns.sql` (three columns the screens need),
 `009_discard.sql` (two more, for filing a duplicate away),
 `010_vendor_history.sql` (when a vendor's details were changed, by whom, and the
-change log behind it) and `011_override_names.sql` (clears an early placeholder
-that made blocked invoices read as approved). 010 is required before a vendor can
-be added or edited: the onboarding form writes columns it creates. The edge functions in
+change log behind it), `011_override_names.sql` (clears an early placeholder
+that made blocked invoices read as approved) and `012_override_outcome.sql` (when
+a person approved an invoice, so an approval is an outcome rather than a note).
+010 is required before a vendor can be added or edited, and 012 before anybody can
+approve an invoice: both forms write columns those migrations create. The edge functions in
 `supabase/functions/` are deployed by hand and read `GEMINI_API_KEY` /
 `ANTHROPIC_API_KEY` from the function environment, so no key ever reaches the
 browser.

@@ -157,24 +157,55 @@ export function wasDiscarded(run: RunRow): boolean {
 export const NEEDS_A_PERSON: readonly Verdict[] = ['REVIEW', 'HOLD', 'BLOCK']
 
 /**
- * Whether this row is an open exception.
+ * Whether a person has approved this invoice over the rules.
  *
- * An exception is a decision that needs a person. A run that failed outright is
- * not one: nothing was decided about it, there is no verdict to agree or disagree
- * with, and nothing on the queue's screen applies to it. Those belong on Invoices
- * under the Failed filter, where the document can be removed and sent again. A run
- * somebody has already discarded is not an exception either.
+ * Both halves are required, the same test the History tab uses: a flag with no
+ * name against it names nobody, and an approval nobody will own is an approval
+ * nobody made.
  */
-export function needsAPerson(run: RunRow): boolean {
-  if (wasDiscarded(run) || hasFailed(run)) return false
-  return run.status === 'complete' && run.verdict !== null && NEEDS_A_PERSON.includes(run.verdict)
+export function approvedByPerson(run: Pick<RunRow, 'touched_by_human' | 'touched_by'>): boolean {
+  return run.touched_by_human && (run.touched_by?.trim().length ?? 0) > 0
 }
 
+/**
+ * The outcome, as opposed to the record.
+ *
+ * `runs.verdict` is what the rules decided and is never rewritten: it is the whole
+ * point of the system that what was caught stays visible, including when it was
+ * overruled. But once a person has approved an invoice, the invoice is approved,
+ * and every screen that answers "where does this stand" has to say so. Recording
+ * the approver and then leaving the invoice reading Held in the exceptions queue
+ * was not a halfway position, it was the approval failing to do anything.
+ *
+ * So the record and the outcome are two questions, and this answers the second.
+ * Who approved it is shown wherever the outcome is, so nobody reads it as the
+ * rules having cleared something they did not.
+ */
+export function effectiveVerdict(run: RunRow): Verdict | null {
+  return approvedByPerson(run) ? 'AUTO_APPROVE' : run.verdict
+}
+
+/**
+ * Whether this row is an open exception.
+ *
+ * An exception is a decision that needs a person. Three things are not one: a run
+ * that failed outright, because nothing was decided about it and nothing on the
+ * queue's screen applies; a run somebody has already discarded; and a run a person
+ * has already approved, because it has had the person it needed.
+ */
+export function needsAPerson(run: RunRow): boolean {
+  if (wasDiscarded(run) || hasFailed(run) || approvedByPerson(run)) return false
+  const verdict = effectiveVerdict(run)
+  return run.status === 'complete' && verdict !== null && NEEDS_A_PERSON.includes(verdict)
+}
+
+// Counted on the outcome, so an invoice a person approved is counted as approved.
 export function countByVerdict(rows: FeedRow[]): Partial<Record<Verdict, number>> {
   const counts: Partial<Record<Verdict, number>> = {}
   for (const row of rows) {
-    if (!row.run.verdict) continue
-    counts[row.run.verdict] = (counts[row.run.verdict] ?? 0) + 1
+    const verdict = effectiveVerdict(row.run)
+    if (!verdict) continue
+    counts[verdict] = (counts[verdict] ?? 0) + 1
   }
   return counts
 }
@@ -202,7 +233,7 @@ export function matchesSearch(row: FeedRow, query: string): boolean {
 // Sorting
 // ---------------------------------------------------------------------------
 
-export type SortKey = 'age' | 'amount' | 'invoice' | 'vendor' | 'outcome' | 'date'
+export type SortKey = 'age' | 'amount' | 'invoice' | 'vendor' | 'outcome' | 'date' | 'approver' | 'approved'
 export type SortDirection = 'asc' | 'desc'
 
 export function sortRows(rows: FeedRow[], key: SortKey, direction: SortDirection): FeedRow[] {
@@ -219,9 +250,13 @@ export function sortRows(rows: FeedRow[], key: SortKey, direction: SortDirection
       case 'vendor':
         return vendorNameFor(row)
       case 'outcome':
-        return String(row.run.verdict ?? '')
+        return String(effectiveVerdict(row.run) ?? '')
       case 'date':
         return String(row.invoice?.invoice_date ?? '')
+      case 'approver':
+        return String(row.run.touched_by ?? '')
+      case 'approved':
+        return String(row.run.approved_at ?? '')
     }
   }
 

@@ -89,6 +89,15 @@ export function parseOrderValue(typed: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
-export function orderIsComplete(inputs: OrderInputs, vendorId: string | null): boolean {
-  return vendorId !== null && parseOrderValue(inputs.totalAmount) !== null && inputs.issuedDate.length > 0
+/**
+ * Whether the person has filled the form in.
+ *
+ * Deliberately about the fields and nothing else. This used to take the resolved
+ * vendor as well, so a vendor the page had failed to find left the button dead
+ * with every required field filled and nothing on screen saying which one was
+ * wrong. Whether we know the vendor is a different question, asked before the form
+ * is offered at all.
+ */
+export function orderIsComplete(inputs: OrderInputs): boolean {
+  return parseOrderValue(inputs.totalAmount) !== null && inputs.issuedDate.length > 0
 }

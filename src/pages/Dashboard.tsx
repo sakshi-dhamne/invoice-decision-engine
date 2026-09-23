@@ -19,6 +19,8 @@ import { tone } from '@/components/tone.ts'
 import { cn } from '@/lib/utils'
 import { count, duration, money, percent, shortDate } from '@/lib/format.ts'
 import {
+  approvedByPerson,
+  effectiveVerdict,
   hasFailed,
   loadFeed,
   matchesSearch,
@@ -31,6 +33,7 @@ import {
 } from '@/lib/feed.ts'
 import { getExtractionDurations } from '@/lib/queries.ts'
 import {
+  APPROVED_BY_PERSON_LABEL,
   duplicateOfSentence,
   FAILED_RUN_SENTENCE,
   reasonSentence,
@@ -50,7 +53,7 @@ const VERDICT_BY_CODE = new Map<string, Verdict>(
 // Outcomes, then the two things that are not outcomes: a run that never reached
 // one, and how the document arrived. Both are filters on the same list rather than
 // sections of their own, because an uploaded invoice is an invoice.
-type InvoiceFilter = Verdict | 'all' | 'failed' | 'uploaded'
+type InvoiceFilter = Verdict | 'all' | 'failed' | 'uploaded' | 'overridden'
 
 const FILTERS: { value: InvoiceFilter; label: string }[] = [
   { value: 'all', label: 'Everything' },
@@ -61,6 +64,9 @@ const FILTERS: { value: InvoiceFilter; label: string }[] = [
   { value: 'ROUTED_NOT_PAID', label: VERDICT_LABEL.ROUTED_NOT_PAID },
   { value: 'failed', label: 'Failed' },
   { value: 'uploaded', label: 'Uploaded' },
+  // Every invoice a person passed over the rules, in one list. Without it the only
+  // way to audit human approvals was to open each invoice and look.
+  { value: 'overridden', label: APPROVED_BY_PERSON_LABEL },
 ]
 
 function median(values: number[]): number | null {
@@ -80,6 +86,11 @@ export default function Dashboard() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' })
+
+  // Who approved it and when replace the invoice date while that filter is on:
+  // those are the two facts the list exists to show, and the date is already on
+  // every other view of the same row.
+  const showApprover = filter === 'overridden'
 
   const load = useCallback(async () => {
     try {
@@ -151,7 +162,18 @@ export default function Dashboard() {
       if (!matchesSearch(row, search)) return false
       if (filter === 'failed' && !hasFailed(row.run)) return false
       if (filter === 'uploaded' && !wasUploaded(row)) return false
-      if (filter !== 'all' && filter !== 'failed' && filter !== 'uploaded' && row.run.verdict !== filter) return false
+      if (filter === 'overridden' && !approvedByPerson(row.run)) return false
+      // Verdict filters read the outcome, so an invoice a person approved is found
+      // under Approved rather than under whatever the rules had decided.
+      if (
+        filter !== 'all' &&
+        filter !== 'failed' &&
+        filter !== 'uploaded' &&
+        filter !== 'overridden' &&
+        effectiveVerdict(row.run) !== filter
+      ) {
+        return false
+      }
       if (vendorFilter !== 'all' && vendorNameFor(row) !== vendorFilter) return false
       const date = row.invoice?.invoice_date ?? ''
       if (fromDate && date < fromDate) return false
@@ -166,7 +188,9 @@ export default function Dashboard() {
     setSort((current) =>
       current.key === key
         ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: key === 'amount' || key === 'date' ? 'desc' : 'asc' },
+        // Most recent, or largest, first. Those are the orders a person means when
+        // they click a heading like this for the first time.
+        : { key, direction: key === 'amount' || key === 'date' || key === 'approved' ? 'desc' : 'asc' },
     )
 
   return (
@@ -293,15 +317,31 @@ export default function Dashboard() {
             ) : (
               <div className="overflow-x-auto">
                 <div className="min-w-[820px]">
-                  <div className="grid grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem] gap-4 border-b border-line-soft px-5 py-1.5">
+                  <div
+                    className={cn(
+                      'grid gap-4 border-b border-line-soft px-5 py-1.5',
+                      showApprover
+                        ? 'grid-cols-[7rem_minmax(0,1fr)_10rem_7rem_9rem_7rem]'
+                        : 'grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem]',
+                    )}
+                  >
                     {(
-                      [
-                        ['outcome', 'Outcome', 'left'],
-                        ['invoice', 'Invoice', 'left'],
-                        ['vendor', 'Vendor', 'left'],
-                        ['amount', 'Amount', 'right'],
-                        ['date', 'Date', 'right'],
-                      ] as [SortKey, string, 'left' | 'right'][]
+                      (showApprover
+                        ? [
+                            ['outcome', 'Outcome', 'left'],
+                            ['invoice', 'Invoice', 'left'],
+                            ['vendor', 'Vendor', 'left'],
+                            ['amount', 'Amount', 'right'],
+                            ['approver', 'Approved by', 'left'],
+                            ['approved', 'Approved on', 'right'],
+                          ]
+                        : [
+                            ['outcome', 'Outcome', 'left'],
+                            ['invoice', 'Invoice', 'left'],
+                            ['vendor', 'Vendor', 'left'],
+                            ['amount', 'Amount', 'right'],
+                            ['date', 'Date', 'right'],
+                          ]) as [SortKey, string, 'left' | 'right'][]
                     ).map(([key, label, align]) => (
                       <button
                         key={key}
@@ -330,7 +370,12 @@ export default function Dashboard() {
                       <li key={row.run.id} className="border-b border-line-soft last:border-0">
                         <Link
                           to={`/decisions/${row.run.id}`}
-                          className="grid grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem] items-start gap-4 px-5 py-3.5 transition-colors hover:bg-line-soft/60"
+                          className={cn(
+                            'grid items-start gap-4 px-5 py-3.5 transition-colors hover:bg-line-soft/60',
+                            showApprover
+                              ? 'grid-cols-[7rem_minmax(0,1fr)_10rem_7rem_9rem_7rem]'
+                              : 'grid-cols-[7rem_minmax(0,1fr)_12rem_8rem_7rem]',
+                          )}
                         >
                           <OutcomeChip run={row.run} size="sm" />
                           <span className="min-w-0">
@@ -354,9 +399,20 @@ export default function Dashboard() {
                           <span className="text-right text-sm text-ink tnum">
                             {money(row.invoice?.total, row.invoice?.currency ?? 'INR')}
                           </span>
-                          <span className="text-right text-sm text-muted tnum">
-                            {shortDate(row.invoice?.invoice_date)}
-                          </span>
+                          {showApprover ? (
+                            <>
+                              <span className="truncate text-sm text-ink-soft" title={row.run.touched_by ?? undefined}>
+                                {row.run.touched_by ?? 'Not recorded'}
+                              </span>
+                              <span className="text-right text-sm text-muted tnum">
+                                {row.run.approved_at ? shortDate(row.run.approved_at) : 'Not recorded'}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-right text-sm text-muted tnum">
+                              {shortDate(row.invoice?.invoice_date)}
+                            </span>
+                          )}
                         </Link>
                       </li>
                     ))}

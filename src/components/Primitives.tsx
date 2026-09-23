@@ -4,11 +4,20 @@
 // None of these hold a sentence of their own about a verdict or a reason code.
 // They take what reasonCopy.ts says and lay it out.
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type InputHTMLAttributes, type ReactNode } from 'react'
+import { UserCheck } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { evidenceValue, humanKey, isInternalKey } from '@/lib/format.ts'
-import { FAILED_RUN_LABEL, reasonSentence, verdictLabel, verdictTone } from '@/lib/reasonCopy.ts'
+import { approvedByPerson } from '@/lib/feed.ts'
+import {
+  APPROVED_BY_PERSON_LABEL,
+  FAILED_RUN_LABEL,
+  reasonSentence,
+  VERDICT_LABEL,
+  verdictLabel,
+  verdictTone,
+} from '@/lib/reasonCopy.ts'
 import type { RunRow, Verdict } from '@/lib/database.types.ts'
 import { tone } from './tone.ts'
 
@@ -54,10 +63,32 @@ export function OutcomeChip({
   size = 'md',
   className,
 }: {
-  run: Pick<RunRow, 'status' | 'verdict'>
+  run: Pick<RunRow, 'status' | 'verdict' | 'touched_by_human' | 'touched_by'>
   size?: 'sm' | 'md' | 'lg'
   className?: string
 }) {
+  // An invoice a person approved reads as approved, in the approval colour, but
+  // says who cleared it. Showing the rules' verdict here instead was the override
+  // doing nothing: the invoice went on reading Held after it had been approved.
+  if (approvedByPerson(run)) {
+    return (
+      <span
+        title={APPROVED_BY_PERSON_LABEL}
+        className={cn(
+          'inline-flex shrink-0 items-center gap-1 rounded-full font-medium',
+          size === 'sm' && 'px-1.5 py-0 text-xs',
+          size === 'md' && 'px-2.5 py-1 text-sm',
+          size === 'lg' && 'px-3.5 py-1.5 text-base',
+          tone('approve').chip,
+          className,
+        )}
+      >
+        <UserCheck className={cn(size === 'sm' ? 'size-3' : 'size-3.5')} aria-hidden="true" />
+        {VERDICT_LABEL.AUTO_APPROVE}
+      </span>
+    )
+  }
+
   if (run.status === 'failed') {
     return (
       <span
@@ -75,6 +106,62 @@ export function OutcomeChip({
     )
   }
   return <VerdictChip verdict={run.verdict} size={size} className={className} />
+}
+
+// ---------------------------------------------------------------------------
+// A field the browser must not fill in
+// ---------------------------------------------------------------------------
+
+/**
+ * A controlled text input that stays empty until a person types in it.
+ *
+ * Two fields in this product are deliberately blank and are the whole reason a
+ * control works: the bank details on the vendor form, and the value on a purchase
+ * order. Both are compared against what an invoice claims, so a value copied from
+ * the invoice makes the comparison compare the document with itself.
+ *
+ * Both were reported as arriving pre-populated anyway, with the exact figure off
+ * the invoice, and neither has any code path that sets them. What does set them is
+ * the browser. Autofill and session restore write straight into the DOM node, and
+ * a controlled React input does not notice: React writes `value` on render, the
+ * browser overwrites it afterwards, and React has no reason to render again
+ * because its own state has not changed. The field then shows a number the
+ * component does not know about, and the person reading the panel above it is told
+ * the figure was not taken from the invoice while looking at the figure from the
+ * invoice.
+ *
+ * So this asks the browser not to (which it may ignore) and then checks, after
+ * paint, that the DOM agrees with the state (which it cannot ignore).
+ */
+export function UnfilledInput({
+  value,
+  onValueChange,
+  ...rest
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string
+  onValueChange: (value: string) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const field = ref.current
+    if (field && field.value !== value) field.value = value
+  })
+
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+      autoComplete="off"
+      // The attributes the common password managers read. None of them is load
+      // bearing on its own; the effect above is what actually holds.
+      data-lpignore="true"
+      data-1p-ignore="true"
+      data-form-type="other"
+    />
+  )
 }
 
 // ---------------------------------------------------------------------------

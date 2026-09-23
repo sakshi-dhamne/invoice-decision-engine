@@ -6,13 +6,15 @@
 // where an internal identifier appears.
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Check, Copy } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { dateAndTime, evidenceValue, fileNameOf, humanKey, money, shortDate } from '@/lib/format.ts'
 import {
+  APPROVED_BY_PERSON_LABEL,
+  approvedByPersonSentence,
   BANK_CHANGED_RECENTLY_LABEL,
   BANK_CONFIRMED_LABEL,
   BANK_CONFIRMED_MISSING,
@@ -20,11 +22,13 @@ import {
   duplicateOfSentence,
   FAILED_RUN_SENTENCE,
   reasonSentence,
+  vendorAddedSinceSentence,
   verdictTone,
 } from '@/lib/reasonCopy.ts'
 import { bankChangedRecently, daysSinceBankChange } from '@/lib/vendorEdit.ts'
 import { approverOf, loadDecision, readFields, type DecisionData, type OrderLine } from '@/lib/decisionData.ts'
 import { discardRun, recordOverride, removeFailedRun } from '@/lib/queries.ts'
+import { runInvoice } from '@/lib/pipeline.ts'
 import { supabase } from '@/lib/supabase.ts'
 import { duplicateFromStages } from '@/lib/feed.ts'
 import { AskVendorDialog } from './AskVendorDialog.tsx'
@@ -82,6 +86,8 @@ export function DecisionDetail({
   const [discardOpen, setDiscardOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [rechecking, setRechecking] = useState(false)
+  const navigate = useNavigate()
   // Read by the keyboard handler, which is registered once and must not close over
   // a stale idea of what this invoice is.
   const duplicateRef = useRef(false)
@@ -181,6 +187,32 @@ export function DecisionDetail({
     await discardRun(data.run.id, who)
     await load()
     onChanged?.()
+  }
+
+  /**
+   * Decides the invoice again, against the master as it stands now.
+   *
+   * Offered where a run's reason no longer holds, which today means a vendor added
+   * since it was decided. It is an ordinary run through the same seven stages: the
+   * rules decide it, not this button.
+   */
+  const recheck = async () => {
+    if (!data?.invoice) return
+    setRechecking(true)
+    setError(null)
+    try {
+      let newRunId: string | null = null
+      const outcome = await runInvoice(data.invoice.id, {
+        onRunCreated: (created) => {
+          newRunId = created.id
+        },
+      })
+      onChanged?.()
+      navigate(`/decisions/${newRunId ?? outcome.run.id}`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'This invoice could not be checked again.')
+      setRechecking(false)
+    }
   }
 
   const copyAudit = async () => {
@@ -336,6 +368,19 @@ export function DecisionDetail({
                 A duplicate's card says which invoice it repeats and links to it,
                 in place of an explanation that would only say the same thing in
                 looser words. */}
+            {approver ? (
+              <Panel className={cn('border-l-4 px-5 py-4', tone('approve').border)}>
+                <p className={cn('text-xs font-medium', tone('approve').text)}>{APPROVED_BY_PERSON_LABEL}</p>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {approvedByPersonSentence(
+                    approver,
+                    data.run.approved_at ? dateAndTime(data.run.approved_at) : 'a date that was not recorded',
+                    data.run.verdict,
+                  )}
+                </p>
+              </Panel>
+            ) : null}
+
             <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
               <p className="prose-serif max-w-[72ch] text-[17px] text-ink-soft">
                 {duplicateOf
@@ -507,7 +552,11 @@ export function DecisionDetail({
               </Panel>
             ) : null}
 
-            {data.codes.includes('UNKNOWN_VENDOR') ? (
+            {/* Offered only while the company is still unknown. The reason code
+                says what was true when this run was decided; if somebody has added
+                the vendor since, the useful action is to check the invoice again,
+                not to add a company that is already there. */}
+            {data.codes.includes('UNKNOWN_VENDOR') && data.vendorUnknownNow ? (
               <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
                 <p className="text-sm text-ink-soft">
                   This company is not on the approved vendor list yet. Add it, confirm where its payments go, and we
@@ -515,6 +564,15 @@ export function DecisionDetail({
                 </p>
                 <Button asChild className="mt-3" size="sm">
                   <Link to={`/vendors/new?from=${data.run.id}`}>Add this vendor</Link>
+                </Button>
+              </Panel>
+            ) : data.codes.includes('UNKNOWN_VENDOR') && data.vendor ? (
+              <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
+                <p className="text-sm text-ink-soft">
+                  {vendorAddedSinceSentence(data.vendor.legal_name)}
+                </p>
+                <Button type="button" className="mt-3" size="sm" onClick={recheck} disabled={rechecking}>
+                  {rechecking ? 'Checking again' : 'Check this invoice again'}
                 </Button>
               </Panel>
             ) : null}
@@ -631,7 +689,12 @@ export function DecisionDetail({
                 {approver ? (
                   <li className="flex items-baseline justify-between gap-4 py-2 text-sm">
                     <span className="text-ink-soft">Approved by</span>
-                    <span className="text-muted">{approver}</span>
+                    <span className="text-muted">
+                      {approver},{' '}
+                      <span className="tnum">
+                        {data.run.approved_at ? dateAndTime(data.run.approved_at) : 'date not recorded'}
+                      </span>
+                    </span>
                   </li>
                 ) : null}
                 {data.run.discarded_at ? (

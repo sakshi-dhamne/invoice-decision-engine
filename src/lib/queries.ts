@@ -244,13 +244,22 @@ export async function getStageLogs(runId: string): Promise<StageLogRow[]> {
   return data
 }
 
-// Records that a person overrode the verdict, and who they were. The original
-// verdict and its reason codes stay exactly as the rules left them: the override
-// is an additional fact about the run, not a rewrite of what was decided.
+/**
+ * Records that a person overrode the verdict: who, and when.
+ *
+ * The rules' verdict and reason codes stay exactly as they left them. That is the
+ * record of what was caught, and rewriting it would mean nobody could ever see
+ * what had been overruled.
+ *
+ * The outcome is a different question from the record, and it does change: once a
+ * person has approved an invoice it is approved. `effectiveVerdict` in feed.ts
+ * reads the two together, which is what takes the invoice out of the queue and
+ * shows it as approved by a person rather than by the rules.
+ */
 export async function recordOverride(runId: string, who: string): Promise<RunRow> {
   const { data, error } = await supabase
     .from('runs')
-    .update({ touched_by_human: true, touched_by: who })
+    .update({ touched_by_human: true, touched_by: who, approved_at: new Date().toISOString() })
     .eq('id', runId)
     .select('*')
     .single()

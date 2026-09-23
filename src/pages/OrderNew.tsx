@@ -19,19 +19,19 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
-import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner } from '@/components/Primitives.tsx'
+import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner, UnfilledInput } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { money, shortDate } from '@/lib/format.ts'
-import { runInvoice } from '@/lib/pipeline.ts'
-import { createPurchaseOrder, getInvoiceById, getRunById, getStageLogs, getVendors } from '@/lib/queries.ts'
+import { raiseOrder } from '@/lib/raiseOrder.ts'
+import { getInvoiceById, getRunById, getStageLogs } from '@/lib/queries.ts'
+import { loadVendorMaster, resolveVendorForDocument } from '@/lib/vendorLookup.ts'
 import { asRecord } from '@/lib/decisionData.ts'
 import {
   describeFromLines,
   emptyOrderInputs,
   orderIsComplete,
-  orderNumberFor,
   parseOrderValue,
   type OrderInputs,
 } from '@/lib/orderForm.ts'
@@ -74,16 +74,29 @@ export default function OrderNew() {
         setLoaded(true)
         return
       }
-      const [doc, stages, vendors] = await Promise.all([
+      const [doc, stages, master] = await Promise.all([
         getInvoiceById(fresh.invoice_id),
         getStageLogs(fromRunId),
-        getVendors(),
+        loadVendorMaster(),
       ])
       const read = asRecord(stages.find((stage) => stage.stage === 'extract')?.output)
 
       setRun(fresh)
       setInvoice(doc)
-      setVendor(vendors.find((entry) => entry.id === doc?.vendor_id) ?? null)
+
+      // Resolved now, against the vendor master as it stands. Reading the invoice
+      // row's stored column instead meant a vendor added after this run was
+      // decided was invisible here, which is exactly the vendor somebody raising
+      // an order is most likely to have just added.
+      setVendor(
+        resolveVendorForDocument({
+          printedName:
+            (typeof read?.vendor_name === 'string' ? read.vendor_name : null) ?? doc?.vendor_name_as_printed ?? null,
+          storedVendorId: doc?.vendor_id,
+          vendors: master.vendors,
+          rules: master.rules,
+        }).vendor,
+      )
       setDescription(
         describeFromLines(Array.isArray(read?.line_items) ? (read.line_items as { description?: string }[]) : []),
       )
@@ -98,7 +111,9 @@ export default function OrderNew() {
     void load()
   }, [load])
 
-  const ready = useMemo(() => orderIsComplete(inputs, vendor?.id ?? null), [inputs, vendor])
+  // The required fields, and nothing else. Whether we know the vendor decides
+  // whether the form is offered at all, below.
+  const ready = useMemo(() => orderIsComplete(inputs), [inputs])
   const set = <K extends keyof OrderInputs>(field: K, value: OrderInputs[K]) =>
     setInputs((current) => ({ ...current, [field]: value }))
 
@@ -111,29 +126,14 @@ export default function OrderNew() {
     setError(null)
 
     try {
-      await createPurchaseOrder({
-        po_number: orderNumberFor(vendor.legal_name),
-        vendor_id: vendor.id,
-        total_amount: value,
+      const raised = await raiseOrder({
+        vendor,
+        invoiceId: run.invoice_id,
+        description,
         currency: invoice?.currency ?? 'INR',
-        amount_billed_to_date: 0,
-        tax_treatment: inputs.taxTreatment,
-        status: inputs.status,
-        // One line, described as the invoice describes the work. The line-level
-        // checks read this the same way they read any other order's lines.
-        line_items: [{ description: description.trim() || null, quantity: null, unit_price: null, amount: value }],
-        issued_date: inputs.issuedDate,
+        inputs,
       })
-
-      setSubmitting('Checking the invoice again')
-      let newRunId: string | null = null
-      const outcome = await runInvoice(run.invoice_id, {
-        onRunCreated: (created) => {
-          newRunId = created.id
-        },
-      })
-
-      navigate(`/decisions/${newRunId ?? outcome.run.id}`)
+      navigate(`/decisions/${raised.runId}`)
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -164,6 +164,19 @@ export default function OrderNew() {
             <Panel>
               <Loading>Loading the held invoice</Loading>
             </Panel>
+          ) : !vendor ? (
+            /* The printed name resolves to nobody on the approved list as it
+               stands, so there is genuinely no vendor to raise an order with. The
+               form is not shown at all rather than shown and refusing to submit. */
+            <Panel className={cn('border-l-4 px-5 py-4', tone('block').border)}>
+              <p className="text-sm text-ink-soft">
+                This invoice does not match any company on the approved vendor list, so there is nobody to raise an
+                order with. Add the vendor first and we will bring you back here.
+              </p>
+              <Button asChild className="mt-3" size="sm">
+                <Link to={`/vendors/new?from=${fromRunId}`}>Add this vendor</Link>
+              </Button>
+            </Panel>
           ) : (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
               <form onSubmit={submit} className="space-y-6">
@@ -175,17 +188,6 @@ export default function OrderNew() {
                   </p>
                 </Panel>
 
-                {!vendor ? (
-                  <Panel className={cn('border-l-4 px-5 py-4', tone('block').border)}>
-                    <p className="text-sm text-ink-soft">
-                      This invoice is not matched to a vendor on the approved list, so there is nobody to raise an
-                      order with. Add the vendor first.
-                    </p>
-                    <Button asChild className="mt-3" size="sm">
-                      <Link to={`/vendors/new?from=${fromRunId}`}>Add this vendor</Link>
-                    </Button>
-                  </Panel>
-                ) : null}
 
                 <Panel>
                   <PanelHeading>What was ordered</PanelHeading>
@@ -197,7 +199,7 @@ export default function OrderNew() {
                       <input
                         id="order-vendor"
                         className={cn(inputClass, 'text-muted')}
-                        value={vendor?.legal_name ?? 'Not matched to a vendor'}
+                        value={vendor.legal_name}
                         readOnly
                       />
                     </div>
@@ -237,14 +239,13 @@ export default function OrderNew() {
                         <label htmlFor="order-value" className={cn(labelClass, holdClasses.text)}>
                           Order value (required)
                         </label>
-                        <input
+                        <UnfilledInput
                           id="order-value"
                           className={cn(inputClass, 'tnum')}
                           value={inputs.totalAmount}
-                          onChange={(event) => set('totalAmount', event.target.value)}
+                          onValueChange={(next) => set('totalAmount', next)}
                           inputMode="decimal"
                           placeholder="0"
-                          autoComplete="off"
                           required
                         />
                       </div>
@@ -301,9 +302,7 @@ export default function OrderNew() {
                     {submitting ? <Spinner className="border-t-primary-foreground" /> : null}
                     {submitting ?? 'Raise the order and check again'}
                   </Button>
-                  {!ready && vendor ? (
-                    <p className="text-sm text-muted">Enter the order value to continue.</p>
-                  ) : null}
+                  {!ready ? <p className="text-sm text-muted">Enter the order value to continue.</p> : null}
                 </div>
               </form>
 
