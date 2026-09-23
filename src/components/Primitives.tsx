@@ -222,6 +222,53 @@ export function Spinner({ className, label }: { className?: string; label?: stri
   )
 }
 
+/**
+ * A placeholder the shape of the thing that is coming.
+ *
+ * Used where a pane already has a header and a layout, and only the contents are
+ * still being fetched. Showing the outgoing invoice's decision under the incoming
+ * invoice's name, which is what reusing the pane did, is worse than showing
+ * nothing: the reader has no way to tell that the figures belong to something else.
+ */
+export function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn('block animate-pulse rounded bg-line-soft', className)} />
+}
+
+/** The decision pane's contents, while the decision is being fetched. */
+export function DecisionSkeleton() {
+  return (
+    <div className="space-y-4" role="status" aria-label="Loading the decision">
+      <Panel className="border-l-4 border-line px-5 py-4">
+        <Skeleton className="h-4 w-4/5" />
+        <Skeleton className="mt-2 h-4 w-3/5" />
+        <div className="mt-4 flex gap-1.5">
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-5 w-20" />
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Panel>
+          <PanelHeading>Why this outcome</PanelHeading>
+          <div className="space-y-2 px-5 py-4">
+            <Skeleton className="h-4 w-11/12" />
+            <Skeleton className="h-4 w-8/12" />
+          </div>
+        </Panel>
+        <Panel>
+          <PanelHeading>The order</PanelHeading>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3.5 px-5 py-4">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </Panel>
+      </div>
+    </div>
+  )
+}
+
 export function Loading({ children }: { children: ReactNode }) {
   return (
     <div className="flex items-center justify-center gap-2.5 px-5 py-14 text-sm text-muted">

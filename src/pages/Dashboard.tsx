@@ -24,6 +24,7 @@ import {
   matchesSearch,
   sortRows,
   vendorNameFor,
+  wasUploaded,
   type FeedRow,
   type SortDirection,
   type SortKey,
@@ -46,7 +47,12 @@ const VERDICT_BY_CODE = new Map<string, Verdict>(
   DECISION_RULES.flatMap((row) => (row.verdict ? [[row.code, row.verdict] as const] : [])),
 )
 
-const FILTERS: { value: Verdict | 'all' | 'failed'; label: string }[] = [
+// Outcomes, then the two things that are not outcomes: a run that never reached
+// one, and how the document arrived. Both are filters on the same list rather than
+// sections of their own, because an uploaded invoice is an invoice.
+type InvoiceFilter = Verdict | 'all' | 'failed' | 'uploaded'
+
+const FILTERS: { value: InvoiceFilter; label: string }[] = [
   { value: 'all', label: 'Everything' },
   { value: 'AUTO_APPROVE', label: VERDICT_LABEL.AUTO_APPROVE },
   { value: 'REVIEW', label: VERDICT_LABEL.REVIEW },
@@ -54,6 +60,7 @@ const FILTERS: { value: Verdict | 'all' | 'failed'; label: string }[] = [
   { value: 'BLOCK', label: VERDICT_LABEL.BLOCK },
   { value: 'ROUTED_NOT_PAID', label: VERDICT_LABEL.ROUTED_NOT_PAID },
   { value: 'failed', label: 'Failed' },
+  { value: 'uploaded', label: 'Uploaded' },
 ]
 
 function median(values: number[]): number | null {
@@ -67,7 +74,7 @@ export default function Dashboard() {
   const [rows, setRows] = useState<FeedRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<Verdict | 'all' | 'failed'>('all')
+  const [filter, setFilter] = useState<InvoiceFilter>('all')
   const [readDurations, setReadDurations] = useState<number[]>([])
   const [vendorFilter, setVendorFilter] = useState('all')
   const [fromDate, setFromDate] = useState('')
@@ -143,7 +150,8 @@ export default function Dashboard() {
     const matched = (rows ?? []).filter((row) => {
       if (!matchesSearch(row, search)) return false
       if (filter === 'failed' && !hasFailed(row.run)) return false
-      if (filter !== 'all' && filter !== 'failed' && row.run.verdict !== filter) return false
+      if (filter === 'uploaded' && !wasUploaded(row)) return false
+      if (filter !== 'all' && filter !== 'failed' && filter !== 'uploaded' && row.run.verdict !== filter) return false
       if (vendorFilter !== 'all' && vendorNameFor(row) !== vendorFilter) return false
       const date = row.invoice?.invoice_date ?? ''
       if (fromDate && date < fromDate) return false

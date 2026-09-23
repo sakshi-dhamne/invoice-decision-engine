@@ -8,6 +8,10 @@ import { ProviderError, type ExtractionProvider, type TextProvider } from './typ
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
 const MAX_TOKENS = 4096
+// Stage 7 wants two or three sentences, and the prompt already says under 60
+// words. Anthropic does no extended thinking unless a request asks for one, so
+// there is no reasoning budget to cap here — only the answer itself.
+const EXPLANATION_MAX_TOKENS = 512
 const TOOL_NAME = 'record_invoice'
 
 // Anthropic tool use takes JSON Schema, not Gemini's OpenAPI-subset `Schema`
@@ -146,7 +150,7 @@ export function createAnthropicTextProvider(model: string, apiKey: string): Text
         },
         body: JSON.stringify({
           model,
-          max_tokens: MAX_TOKENS,
+          max_tokens: EXPLANATION_MAX_TOKENS,
           temperature: 0.2,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
         }),

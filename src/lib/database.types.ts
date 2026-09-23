@@ -11,12 +11,42 @@ export type VendorRow = {
   // Who confirmed the account above, and how. Recorded when a vendor is onboarded
   // so the payment details are not just numbers somebody typed.
   bank_confirmed_by: string | null
+  // When that confirmation happened. A confirmation with no date cannot be aged,
+  // and an out-of-band check is only worth anything while it is recent.
+  bank_confirmed_at: string | null
+  // When the account or IFSC last moved. The decision screens read this: an
+  // invoice against a vendor whose account changed in the last thirty days is
+  // shown as such at the moment somebody decides it.
+  bank_changed_at: string | null
   gstin: string | null
   address: string | null
   email_domain: string | null
   status: VendorStatus
   created_at: string
+  added_by: string | null
+  updated_at: string | null
+  updated_by: string | null
 }
+
+// One field, changed once. A save that touches three fields writes three rows, so
+// a payment change and an identity edit made together can be told apart.
+export type VendorChangeKind = 'created' | 'identity' | 'payment'
+
+export type VendorChangeRow = {
+  id: string
+  vendor_id: string
+  kind: VendorChangeKind
+  field: string
+  old_value: string | null
+  new_value: string | null
+  changed_by: string
+  // Who confirmed the new account, and how. Present on a payment change and
+  // nothing else.
+  verification_note: string | null
+  changed_at: string
+}
+
+export type VendorChangeInsert = Omit<VendorChangeRow, 'id' | 'changed_at'> & { changed_at?: string }
 
 export type VendorInsert = Partial<VendorRow> & Pick<VendorRow, 'id' | 'legal_name' | 'status'>
 
@@ -154,6 +184,11 @@ export type Database = {
   public: {
     Tables: {
       vendors: { Row: VendorRow; Insert: VendorInsert; Update: Partial<VendorInsert> } & EmptyRelationships
+      vendor_changes: {
+        Row: VendorChangeRow
+        Insert: VendorChangeInsert
+        Update: Partial<VendorChangeInsert>
+      } & EmptyRelationships
       purchase_orders: { Row: PurchaseOrderRow; Insert: PurchaseOrderInsert; Update: Partial<PurchaseOrderInsert> } &
         EmptyRelationships
       invoices: { Row: InvoiceRow; Insert: InvoiceInsert; Update: Partial<InvoiceInsert> } & EmptyRelationships

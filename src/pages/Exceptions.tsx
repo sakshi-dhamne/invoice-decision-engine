@@ -24,7 +24,6 @@ import { cn } from '@/lib/utils'
 import { count, money, waitingSince } from '@/lib/format.ts'
 import {
   countByVerdict,
-  hasFailed,
   loadFeed,
   matchesSearch,
   needsAPerson,
@@ -41,14 +40,16 @@ import { getInvoicesWithoutCompletedRun } from '@/lib/queries.ts'
 import { VERDICT_LABEL } from '@/lib/reasonCopy.ts'
 import type { Verdict } from '@/lib/database.types.ts'
 
-type OutcomeFilter = Verdict | 'all' | 'failed'
+type OutcomeFilter = Verdict | 'all'
 
+// The three verdicts that put a document in front of a person. A run that failed
+// is not among them: nothing was decided about it, so there is no exception to
+// work. Those live on Invoices under the Failed filter, where they can be removed.
 const OUTCOMES: { value: OutcomeFilter; label: string }[] = [
   { value: 'all', label: 'Every outcome' },
   { value: 'REVIEW', label: VERDICT_LABEL.REVIEW },
   { value: 'HOLD', label: VERDICT_LABEL.HOLD },
   { value: 'BLOCK', label: VERDICT_LABEL.BLOCK },
-  { value: 'failed', label: 'Failed' },
 ]
 
 const SORTS: { value: SortKey; label: string }[] = [
@@ -86,11 +87,7 @@ export default function Exceptions() {
 
   const queue = useMemo(() => {
     const open = (rows ?? []).filter((row) => needsAPerson(row.run) && matchesSearch(row, search))
-    const byOutcome = open.filter((row) => {
-      if (outcome === 'all') return true
-      if (outcome === 'failed') return hasFailed(row.run)
-      return row.run.verdict === outcome && !hasFailed(row.run)
-    })
+    const byOutcome = open.filter((row) => outcome === 'all' || row.run.verdict === outcome)
     const byVendor =
       vendorFilter === 'all' ? byOutcome : byOutcome.filter((row) => vendorNameFor(row) === vendorFilter)
     // Oldest first means the smallest start time first; largest amount means the
@@ -268,7 +265,7 @@ export default function Exceptions() {
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         <section
           aria-label="Open exceptions"
-          className="flex w-[420px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
+          className="flex w-[496px] shrink-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
         >
           {/* Filter and sort */}
           <div className="flex shrink-0 flex-wrap gap-2 border-b border-line-soft px-3 py-2">
@@ -322,7 +319,7 @@ export default function Exceptions() {
             </select>
           </div>
 
-          <div className="grid shrink-0 grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_2rem] gap-2 border-b border-line-soft px-3 py-1.5 text-[11px] tracking-wide text-faint">
+          <div className="grid shrink-0 grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_1.75rem] gap-2 border-b border-line-soft px-3 py-1.5 text-[11px] tracking-wide text-faint">
             <span>Invoice</span>
             <span>Vendor</span>
             <span className="text-right">Amount</span>
@@ -356,7 +353,7 @@ export default function Exceptions() {
                         onClick={() => select(row)}
                         aria-current={active ? 'true' : undefined}
                         className={cn(
-                          'grid h-10 w-full grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_2rem] items-center gap-2 border-b border-line-soft px-3 text-left transition-colors',
+                          'grid h-10 w-full grid-cols-[7rem_minmax(0,1fr)_4.75rem_4rem_1.75rem] items-center gap-2 border-b border-line-soft px-3 text-left transition-colors',
                           active ? 'bg-line-soft' : 'hover:bg-line-soft/60',
                         )}
                       >
@@ -404,7 +401,11 @@ export default function Exceptions() {
           aria-label="The selected invoice"
           className="min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface"
         >
+          {/* Keyed on the run so React remounts rather than reusing the previous
+              invoice's state. Clearing on selection is belt and braces; the key is
+              what makes it structural. */}
           <DecisionDetail
+            key={selected?.run.id ?? 'nothing-selected'}
             runId={selected?.run.id ?? null}
             onChanged={load}
             onRemoved={() => select(null, true)}

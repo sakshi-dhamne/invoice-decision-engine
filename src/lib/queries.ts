@@ -1,8 +1,10 @@
 import { supabase } from './supabase.ts'
+import { latestRunPerInvoice } from './feed.ts'
 import type {
   AssumptionRow,
   InvoiceRow,
   Json,
+  PurchaseOrderInsert,
   PurchaseOrderRow,
   RuleRow,
   RunRow,
@@ -10,6 +12,8 @@ import type {
   StageLogRow,
   StageLogStatus,
   Verdict,
+  VendorChangeInsert,
+  VendorChangeRow,
   VendorInsert,
   VendorRow,
 } from './database.types.ts'
@@ -211,25 +215,17 @@ export async function resetDemoData(): Promise<void> {
 // Product screens
 // ---------------------------------------------------------------------------
 
-// The latest run per invoice, which is what every screen outside the live view
-// shows. An invoice re-run after onboarding has two runs; the queue should show
-// where it stands now, not where it started.
+// The latest run per invoice record, which is what every screen outside the live
+// view shows. An invoice re-run after onboarding has two runs; the queue should
+// show where it stands now, not where it started. The selection rule itself lives
+// in feed.ts, where it can be tested without a database.
 export async function getLatestRuns(): Promise<RunRow[]> {
   const { data, error } = await supabase
     .from('runs')
     .select('*')
     .order('started_at', { ascending: false })
   if (error) throw error
-
-  const seen = new Set<string>()
-  const latest: RunRow[] = []
-  for (const run of data) {
-    const key = run.invoice_id ?? run.id
-    if (seen.has(key)) continue
-    seen.add(key)
-    latest.push(run)
-  }
-  return latest
+  return latestRunPerInvoice(data)
 }
 
 export async function getRunById(id: string): Promise<RunRow | null> {
@@ -264,6 +260,89 @@ export async function recordOverride(runId: string, who: string): Promise<RunRow
 
 export async function createVendor(vendor: VendorInsert): Promise<VendorRow> {
   const { data, error } = await supabase.from('vendors').insert(vendor).select('*').single()
+  if (error) throw error
+  return data
+}
+
+// ---------------------------------------------------------------------------
+// Vendor history
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies an edit and records what it changed, field by field.
+ *
+ * The change rows are written first. If the update then fails the trail carries an
+ * edit that did not land, which reads as a mistake somebody can investigate; the
+ * other order loses the record of a change that did land, which reads as nothing
+ * at all. Where the two can come apart, the trail is the half worth keeping.
+ *
+ * The caller decides which fields moved and how each one is classified. This is
+ * the write, not the policy.
+ */
+export async function applyVendorEdit(input: {
+  vendorId: string
+  patch: Partial<VendorInsert>
+  changes: readonly Omit<VendorChangeInsert, 'vendor_id'>[]
+}): Promise<VendorRow> {
+  if (input.changes.length > 0) {
+    const { error: trailError } = await supabase
+      .from('vendor_changes')
+      .insert(input.changes.map((change) => ({ ...change, vendor_id: input.vendorId })))
+    if (trailError) throw trailError
+  }
+
+  const { data, error } = await supabase
+    .from('vendors')
+    .update(input.patch)
+    .eq('id', input.vendorId)
+    .select('*')
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Every edit ever made to one vendor, most recent first.
+export async function getVendorChanges(vendorId: string): Promise<VendorChangeRow[]> {
+  const { data, error } = await supabase
+    .from('vendor_changes')
+    .select('*')
+    .eq('vendor_id', vendorId)
+    .order('changed_at', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+// The same, for every vendor at once, so the list screen can show each vendor's
+// last change without a query per row.
+export async function getAllVendorChanges(): Promise<Map<string, VendorChangeRow[]>> {
+  const { data, error } = await supabase
+    .from('vendor_changes')
+    .select('*')
+    .order('changed_at', { ascending: false })
+  if (error) throw error
+
+  const byVendor = new Map<string, VendorChangeRow[]>()
+  for (const row of data) {
+    const existing = byVendor.get(row.vendor_id)
+    if (existing) existing.push(row)
+    else byVendor.set(row.vendor_id, [row])
+  }
+  return byVendor
+}
+
+// ---------------------------------------------------------------------------
+// Purchase orders
+// ---------------------------------------------------------------------------
+
+/**
+ * Raises an order.
+ *
+ * Used when a held invoice cites no order and somebody decides the work was
+ * genuinely authorised. The invoice is re-run afterwards by the caller, so the
+ * order is checked by the same rules as any other rather than being assumed good.
+ */
+export async function createPurchaseOrder(order: PurchaseOrderInsert): Promise<PurchaseOrderRow> {
+  const { data, error } = await supabase.from('purchase_orders').insert(order).select('*').single()
   if (error) throw error
   return data
 }

@@ -15,6 +15,22 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
+/**
+ * Who overrode this verdict, if anybody did.
+ *
+ * Both halves are required. `touched_by_human` on its own says an override was
+ * recorded but not by whom, which is how "Approved by: Approved at this
+ * workstation" came to sit on a blocked invoice: an early version of the override
+ * button wrote that string in place of asking for a name. A placeholder is not an
+ * approver, so it reads here as nobody, and 011_override_names.sql clears the
+ * rows that still carry it.
+ */
+export function approverOf(run: Pick<RunRow, 'touched_by_human' | 'touched_by'>): string | null {
+  if (!run.touched_by_human) return null
+  const name = run.touched_by?.trim() ?? ''
+  return name.length > 0 ? name : null
+}
+
 export interface OrderLine {
   description?: string | null
   quantity?: number | null

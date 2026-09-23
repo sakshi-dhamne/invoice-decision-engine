@@ -7,9 +7,11 @@ import Decision from '@/pages/Decision'
 import Exceptions from '@/pages/Exceptions'
 import ExtractionHarness from '@/pages/ExtractionHarness'
 import NotFound from '@/pages/NotFound'
+import OrderNew from '@/pages/OrderNew'
 import Process from '@/pages/Process'
 import RunLive from '@/pages/RunLive'
 import Rules from '@/pages/Rules'
+import VendorEdit from '@/pages/VendorEdit'
 import VendorNew from '@/pages/VendorNew'
 import Vendors from '@/pages/Vendors'
 
@@ -23,6 +25,8 @@ function App() {
         <Route path="/decisions/:id" element={<Decision />} />
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/vendors/new" element={<VendorNew />} />
+        <Route path="/vendors/:id/edit" element={<VendorEdit />} />
+        <Route path="/orders/new" element={<OrderNew />} />
         <Route path="/controls" element={<Rules />} />
         <Route path="/invoices" element={<Dashboard />} />
         <Route path="/process" element={<Process />} />

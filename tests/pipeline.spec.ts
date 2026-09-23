@@ -84,11 +84,16 @@ describe('row adapters', () => {
       bank_account: '778899001122334',
       bank_ifsc: null,
       bank_confirmed_by: null,
+      bank_confirmed_at: null,
+      bank_changed_at: null,
       gstin: null,
       address: null,
       email_domain: null,
       status: 'active',
       created_at: '2026-01-01T00:00:00Z',
+      added_by: null,
+      updated_at: null,
+      updated_by: null,
     }
     expect(toVendorRecord(row).aliases).toEqual([])
   })

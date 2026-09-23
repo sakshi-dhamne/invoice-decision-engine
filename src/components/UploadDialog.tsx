@@ -158,12 +158,31 @@ export function UploadDialog({
     }
   }, [])
 
-  const reset = () => {
-    if (running) return
+  const reset = useCallback(() => {
     setItems([])
     setProblem(null)
     setDragging(false)
-  }
+  }, [])
+
+  /**
+   * Opening the dialog empties it.
+   *
+   * The list is what you are putting in now, not a record of what you have ever
+   * put in. It was only cleared on close, so a dialog left open through a page
+   * change, or reopened in the same visit, still listed files that had been
+   * decided hours or days earlier, with "See it" links to runs from that earlier
+   * session. Anything already decided belongs on Invoices, which is where it goes.
+   */
+  // Keyed on `open` alone, deliberately: this fires when the dialog is opened, not
+  // every time the queue advances while it is open. `running` is read through a
+  // ref for the same reason, so a queue still working in the background is never
+  // cleared out from under itself.
+  const busy = useRef(false)
+  busy.current = running
+
+  useEffect(() => {
+    if (open && !busy.current) reset()
+  }, [open, reset])
 
   const waiting = items.filter((item) => item.state === 'waiting').length
   const decided = items.filter((item) => item.state === 'decided').length
@@ -177,10 +196,7 @@ export function UploadDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next && !running) reset()
-        onOpenChange(next)
-      }}
+      onOpenChange={onOpenChange}
     >
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>

@@ -119,6 +119,133 @@ export function stageLabel(stage: string): string {
   return STAGE_LABEL[stage] ?? stage.replace(/_/g, ' ')
 }
 
+// ---------------------------------------------------------------------------
+// The checks, by name
+// ---------------------------------------------------------------------------
+
+/**
+ * What each stage-5 check is looking at, as a person would say it.
+ *
+ * The keys are the field names on the validation report. Those are how the code
+ * refers to a check and they are not a name: "Failed: bank_account" told a reader
+ * that something called bank_account had failed, which is neither English nor
+ * information. The trail says which checks objected, so it has to be able to name
+ * them.
+ */
+export const CHECK_LABEL: Readonly<Record<string, string>> = {
+  credit_note: 'whether this is a credit note',
+  exact_duplicate: 'whether we have been through this document before',
+  bank_account: 'the bank account',
+  remit_to: 'who the payment is directed to',
+  vendor_status: 'whether the vendor is still active',
+  vendor_resolved: 'whether we recognise the company',
+  po_status: 'whether the order is still open',
+  currency: 'the currency',
+  invoice_date: 'the invoice date',
+  required_fields: 'whether everything we need was legible',
+  arithmetic: 'whether the figures add up',
+  tax_treatment: 'whether the figures include tax',
+  quantities: 'the quantities billed',
+  unit_prices: 'the amount billed against the order price',
+  line_coverage: 'whether every line appears on the order',
+  threshold_split: 'whether one order has been split across several invoices',
+  near_duplicate: 'whether a recent invoice is almost the same',
+  cumulative_overage: 'the total billed against the order',
+}
+
+export function checkLabel(key: string): string {
+  return CHECK_LABEL[key] ?? key.replace(/_/g, ' ')
+}
+
+// Small counts read better as words in a sentence. Beyond this a numeral is
+// clearer than a word, and a run with ten objections is not a sentence anybody is
+// reading for its prose.
+const NUMBER_WORD = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+
+function asWord(value: number): string {
+  return NUMBER_WORD[value] ?? String(value)
+}
+
+/** A list read aloud: "a", "a and b", "a, b, and c". */
+function listSentence(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? ''
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`
+}
+
+/**
+ * What the checks stage says about itself.
+ *
+ * Names the checks that objected rather than counting them. A reader who is told
+ * two checks objected still has to go and find out which two, and everything
+ * needed to say so is already in hand.
+ */
+export function objectionSentence(checkKeys: readonly string[]): string {
+  if (checkKeys.length === 0) return 'Every check that applies to this invoice passed.'
+  const named = listSentence(checkKeys.map(checkLabel))
+  return checkKeys.length === 1
+    ? `One check objected: ${named}.`
+    : `${asWord(checkKeys.length).charAt(0).toUpperCase()}${asWord(checkKeys.length).slice(1)} checks objected: ${named}.`
+}
+
+/**
+ * Which checks on a validation report did not pass.
+ *
+ * Reads the report structurally rather than naming any check, so a new check
+ * appears here the moment it is added to the report.
+ */
+export function checksThatObjected(report: Readonly<Record<string, unknown>>): string[] {
+  return Object.entries(report)
+    .filter(([, value]) => value !== null && typeof value === 'object' && 'passed' in value && !(value as { passed: unknown }).passed)
+    .map(([name]) => name)
+}
+
+// ---------------------------------------------------------------------------
+// Vendors
+// ---------------------------------------------------------------------------
+
+// The editable fields, named as the form names them. Used by the form's labels and
+// by the change history, so a change reads with the same word the person typed it
+// under.
+export const VENDOR_FIELD_LABEL: Readonly<Record<string, string>> = {
+  legal_name: 'Registered name',
+  aliases: 'Also known as',
+  gstin: 'Tax registration number',
+  address: 'Address',
+  email_domain: 'Billing domain',
+  status: 'Status',
+  bank_account: 'Account number',
+  bank_ifsc: 'IFSC',
+}
+
+export function vendorFieldLabel(field: string): string {
+  return VENDOR_FIELD_LABEL[field] ?? field.replace(/_/g, ' ')
+}
+
+/**
+ * The note a reviewer sees when a vendor's account has moved recently.
+ *
+ * Deliberately says what happened and when, and stops. An account changing is not
+ * evidence of anything on its own: vendors do move banks. What it is, is the one
+ * moment where a person looking at the invoice is worth more than any check, and
+ * they cannot be that if nobody tells them.
+ */
+export function bankChangedRecentlySentence(days: number): string {
+  const when = days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
+  return `This vendor's bank account was changed ${when}. Check that this invoice is being paid to the account you expect.`
+}
+
+export const BANK_CHANGED_RECENTLY_LABEL = 'Recently changed bank account'
+
+// The out-of-band confirmation, wherever it is shown.
+export const BANK_CONFIRMED_LABEL = 'Who confirmed these details'
+export const BANK_CONFIRMED_MISSING = 'Nobody is recorded as having confirmed this account.'
+
+// The change history on a vendor.
+export const VENDOR_HISTORY_EMPTY = 'Nothing has been changed since this vendor was added.'
+export const PAYMENT_CHANGE_LABEL = 'Payment details'
+export const IDENTITY_CHANGE_LABEL = 'Details'
+
 // Thresholds on the rules page. The label is what the control is called, the note
 // is the one line under it saying what moving it does.
 export interface RuleCopy {

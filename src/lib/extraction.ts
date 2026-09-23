@@ -30,9 +30,20 @@ export interface CachedExtraction {
   extractedAt: string
 }
 
+// The document itself, ready to post. Stage 1 already downloads every document to
+// fingerprint it, so it hands the bytes on rather than making stage 2 fetch the
+// same file a second time.
+export interface FetchedDocument {
+  base64: string
+  mimeType: AcceptedDocumentType
+}
+
 export interface GetOrExtractOptions {
   // Skips the cache read and always calls the edge function.
   force?: boolean
+  // The already-downloaded bytes, when the caller has them. Saves a second round
+  // trip to Storage for the same file; without it the document is fetched here.
+  document?: FetchedDocument
   // Forces the edge function's fallback chain down to one provider, bypassing the
   // cache entirely — for the harness's `?provider=` testing mode. The result is
   // still recorded (for audit) but never becomes the invoice's current cached
@@ -59,20 +70,23 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-// The bytes, and what the server says they are. A seeded fixture is always a PDF;
-// an uploaded document is whatever content type it was stored with, which is how a
-// phone photo keeps its identity all the way to the model.
-async function fetchDocument(documentUrl: string): Promise<{ base64: string; mimeType: AcceptedDocumentType }> {
-  const response = await fetch(documentUrl)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${documentUrl}: ${response.status}`)
-  }
-  const declared = (response.headers.get('content-type') ?? '').split(';')[0].trim()
-  const buffer = await response.arrayBuffer()
+// Bytes already in hand, packaged for the edge function. A seeded fixture is
+// always a PDF; an uploaded document is whatever content type it was stored with,
+// which is how a phone photo keeps its identity all the way to the model.
+export function documentFromBytes(buffer: ArrayBuffer, declaredType: string | null): FetchedDocument {
+  const declared = (declaredType ?? '').split(';')[0].trim()
   return {
     base64: arrayBufferToBase64(buffer),
     mimeType: isAcceptedDocumentType(declared) ? declared : 'application/pdf',
   }
+}
+
+async function fetchDocument(documentUrl: string): Promise<FetchedDocument> {
+  const response = await fetch(documentUrl)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${documentUrl}: ${response.status}`)
+  }
+  return documentFromBytes(await response.arrayBuffer(), response.headers.get('content-type'))
 }
 
 // Fetches a PDF from same-origin `public/invoices/` and posts it to the extract-invoice
@@ -82,8 +96,9 @@ async function extractInvoice(
   documentUrl: string,
   invoiceNumber?: string,
   provider?: ExtractionProviderName,
+  document?: FetchedDocument,
 ): Promise<ExtractionOutcome> {
-  const { base64, mimeType } = await fetchDocument(documentUrl)
+  const { base64, mimeType } = document ?? (await fetchDocument(documentUrl))
 
   const { data, error } = await supabase.functions.invoke<ExtractInvoiceResponse>('extract-invoice', {
     body: { pdf_base64: base64, mime_type: mimeType, invoice_number: invoiceNumber, provider },
@@ -143,7 +158,7 @@ export async function getOrExtract(
     if (cached) return toCached(cached, true)
   }
 
-  const outcome = await extractInvoice(pdfUrl, invoiceNumber, forceProvider)
+  const outcome = await extractInvoice(pdfUrl, invoiceNumber, forceProvider, opts.document)
 
   if (forceProvider) {
     // Recorded for history/audit but not promoted to `is_current` — a provider

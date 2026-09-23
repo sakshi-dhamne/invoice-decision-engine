@@ -2,16 +2,35 @@
 //
 // Who we are willing to pay, and since when. An invoice from a company that is not
 // on this list is held, so this is the list that decides what clears.
+//
+// The account number on a row is the reference every invoice from that vendor is
+// checked against, which makes two things worth showing beside it: who confirmed
+// it and how they were reached, and whether it has moved lately. An account nobody
+// can say they verified is an account nobody verified, and an account that changed
+// last week is the thing to notice before the next invoice against it arrives.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
 import { EmptyState, ErrorNote, Loading, PageBody, Panel, PanelHeading } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { count, shortDate } from '@/lib/format.ts'
-import { getVendorsWithActivity } from '@/lib/queries.ts'
-import type { VendorRow } from '@/lib/database.types.ts'
+import { count, dateAndTime, shortDate } from '@/lib/format.ts'
+import { getAllVendorChanges, getVendorsWithActivity } from '@/lib/queries.ts'
+import {
+  BANK_CHANGED_RECENTLY_LABEL,
+  BANK_CONFIRMED_LABEL,
+  BANK_CONFIRMED_MISSING,
+  IDENTITY_CHANGE_LABEL,
+  PAYMENT_CHANGE_LABEL,
+  VENDOR_HISTORY_EMPTY,
+  vendorFieldLabel,
+} from '@/lib/reasonCopy.ts'
+import { bankChangedRecently, daysSinceBankChange } from '@/lib/vendorEdit.ts'
+import type { VendorChangeRow, VendorRow } from '@/lib/database.types.ts'
 
 type StatusFilter = 'all' | 'active' | 'inactive'
 
@@ -20,15 +39,64 @@ interface Entry {
   openOrders: number
 }
 
+/** One edit, as a line in the history. */
+function ChangeLine({ change }: { change: VendorChangeRow }) {
+  const payment = change.kind === 'payment'
+  const classes = tone('block')
+
+  return (
+    <li className="border-b border-line-soft py-2.5 last:border-0 last:pb-0">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {/* Payment changes are marked distinctly from identity edits, because
+            they are a different kind of event and the list has to be scannable
+            for them. */}
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 text-[11px]',
+            payment ? classes.chip : 'border border-line text-muted',
+          )}
+        >
+          {payment ? PAYMENT_CHANGE_LABEL : IDENTITY_CHANGE_LABEL}
+        </span>
+        <span className="text-sm text-ink">{vendorFieldLabel(change.field)}</span>
+        <span className="ml-auto text-xs text-muted tnum">{dateAndTime(change.changed_at)}</span>
+      </div>
+
+      <div className="mt-1 flex flex-wrap items-baseline gap-2 text-sm">
+        <span className={cn('text-muted line-through', payment && 'identifier')}>{change.old_value ?? 'Nothing'}</span>
+        <span aria-hidden="true" className="text-muted">
+          to
+        </span>
+        <span className={cn('font-medium text-ink', payment && 'identifier')}>{change.new_value ?? 'Nothing'}</span>
+      </div>
+
+      <p className="mt-1 text-xs text-muted">Changed by {change.changed_by}</p>
+      {change.verification_note ? (
+        <p className={cn('mt-0.5 text-xs', classes.text)}>Confirmed with the vendor: {change.verification_note}</p>
+      ) : null}
+    </li>
+  )
+}
+
 export default function Vendors() {
   const [entries, setEntries] = useState<Entry[] | null>(null)
+  const [changes, setChanges] = useState<Map<string, VendorChangeRow[]>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      setEntries(await getVendorsWithActivity())
+      const [withActivity, history] = await Promise.all([
+        getVendorsWithActivity(),
+        // The history table is added by 010_vendor_history.sql. A project that has
+        // not had it applied yet still gets a working vendor list, with no history
+        // under any of the rows.
+        getAllVendorChanges().catch(() => new Map<string, VendorChangeRow[]>()),
+      ])
+      setEntries(withActivity)
+      setChanges(history)
       setError(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The vendor list could not be loaded.')
@@ -118,54 +186,128 @@ export default function Vendors() {
             {entries === null ? (
               <Loading>Loading the vendor list</Loading>
             ) : visible.length === 0 ? (
-              <EmptyState>
-                No vendor matches that. Clear the search to see the whole list.
-              </EmptyState>
+              <EmptyState>No vendor matches that. Clear the search to see the whole list.</EmptyState>
             ) : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[820px]">
-                  <div
-                    className="grid grid-cols-[minmax(0,1fr)_14rem_8rem_7rem_7rem] gap-4 border-b border-line-soft px-5 py-1.5 text-[11px] tracking-wide text-faint"
-                    aria-hidden="true"
-                  >
-                    <span>Vendor</span>
-                    <span>Also known as</span>
-                    <span className="text-right">Open orders</span>
-                    <span>Status</span>
-                    <span className="text-right">Added</span>
-                  </div>
+              <ul>
+                {visible.map((entry) => {
+                  const vendor = entry.vendor
+                  const history = changes.get(vendor.id) ?? []
+                  const open = expanded === vendor.id
+                  const recentlyMoved = bankChangedRecently(vendor)
+                  const sinceChange = daysSinceBankChange(vendor)
+                  const blockClasses = tone('block')
 
-                  <ul>
-                    {visible.map((entry) => (
-                      <li
-                        key={entry.vendor.id}
-                        className="grid grid-cols-[minmax(0,1fr)_14rem_8rem_7rem_7rem] items-center gap-4 border-b border-line-soft px-5 py-2.5 last:border-0"
-                      >
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm text-ink">{entry.vendor.legal_name}</span>
-                          {entry.vendor.gstin ? (
-                            <span className="identifier block truncate text-xs text-muted">{entry.vendor.gstin}</span>
+                  return (
+                    <li key={vendor.id} className="border-b border-line-soft last:border-0">
+                      <div className="grid gap-4 px-5 py-3.5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1.6fr)_8rem_10rem]">
+                        {/* Who they are */}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-ink" title={vendor.legal_name}>
+                            {vendor.legal_name}
+                          </p>
+                          {vendor.gstin ? (
+                            <p className="identifier truncate text-xs text-muted">{vendor.gstin}</p>
                           ) : null}
-                        </span>
-                        <span className="truncate text-sm text-muted" title={(entry.vendor.aliases ?? []).join(', ')}>
-                          {(entry.vendor.aliases ?? []).join(', ') || 'Nothing recorded'}
-                        </span>
-                        <span className="text-right text-sm text-ink tnum">{count(entry.openOrders)}</span>
-                        <span>
-                          {entry.vendor.status === 'active' ? (
-                            <span className="text-sm text-ink-soft">Active</span>
+                          <p
+                            className="mt-0.5 truncate text-xs text-muted"
+                            title={(vendor.aliases ?? []).join(', ')}
+                          >
+                            {(vendor.aliases ?? []).length > 0
+                              ? `Also known as ${(vendor.aliases ?? []).join(', ')}`
+                              : ''}
+                          </p>
+                        </div>
+
+                        {/* Where the money goes, and the evidence that somebody
+                            checked it. This is the whole reason the note is
+                            collected, and it was being collected and never shown. */}
+                        <div className="min-w-0">
+                          <p className="identifier truncate text-sm text-ink">
+                            {vendor.bank_account ?? 'No account on file'}
+                            {vendor.bank_ifsc ? `, ${vendor.bank_ifsc}` : ''}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted">
+                            {vendor.bank_confirmed_by
+                              ? `${BANK_CONFIRMED_LABEL}: ${vendor.bank_confirmed_by}${
+                                  vendor.bank_confirmed_at ? `, ${shortDate(vendor.bank_confirmed_at)}` : ''
+                                }`
+                              : BANK_CONFIRMED_MISSING}
+                          </p>
+                          {recentlyMoved ? (
+                            <p className={cn('mt-1 inline-block rounded-full px-2 py-0.5 text-[11px]', blockClasses.chip)}>
+                              {BANK_CHANGED_RECENTLY_LABEL}
+                              {sinceChange !== null ? `, ${count(sinceChange)} days ago` : ''}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="text-sm">
+                          <p className="text-ink tnum">{count(entry.openOrders)} open orders</p>
+                          {vendor.status === 'active' ? (
+                            <p className="mt-0.5 text-xs text-muted">Active</p>
                           ) : (
-                            <span className={cn('rounded-full px-2 py-0.5 text-xs', tone('block').chip)}>
+                            <p className={cn('mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px]', blockClasses.chip)}>
                               No longer active
-                            </span>
+                            </p>
                           )}
-                        </span>
-                        <span className="text-right text-sm text-muted tnum">{shortDate(entry.vendor.created_at)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
+                        </div>
+
+                        {/* When, and by whom */}
+                        <div className="text-xs text-muted">
+                          <p className="tnum">Added {shortDate(vendor.created_at)}</p>
+                          <p className="truncate" title={vendor.added_by ?? undefined}>
+                            {vendor.added_by ? `by ${vendor.added_by}` : 'by somebody not recorded'}
+                          </p>
+                          {vendor.updated_at ? (
+                            <>
+                              <p className="mt-1 tnum">Changed {shortDate(vendor.updated_at)}</p>
+                              <p className="truncate" title={vendor.updated_by ?? undefined}>
+                                {vendor.updated_by ? `by ${vendor.updated_by}` : 'by somebody not recorded'}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="mt-1">Never changed</p>
+                          )}
+
+                          <div className="mt-2 flex items-center gap-3">
+                            <Button asChild size="sm" variant="outline">
+                              <Link to={`/vendors/${encodeURIComponent(vendor.id)}/edit`}>Edit</Link>
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => setExpanded(open ? null : vendor.id)}
+                              aria-expanded={open}
+                              className="inline-flex items-center gap-1 text-xs text-muted transition-colors hover:text-ink"
+                            >
+                              {open ? (
+                                <ChevronDown className="size-3.5" aria-hidden="true" />
+                              ) : (
+                                <ChevronRight className="size-3.5" aria-hidden="true" />
+                              )}
+                              {count(history.length)} changes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {open ? (
+                        <div className="border-t border-line-soft bg-ground px-5 py-3">
+                          <h3 className="text-xs font-medium text-ink">Everything that has changed</h3>
+                          {history.length === 0 ? (
+                            <p className="mt-2 text-sm text-muted">{VENDOR_HISTORY_EMPTY}</p>
+                          ) : (
+                            <ul className="mt-1">
+                              {history.map((change) => (
+                                <ChangeLine key={change.id} change={change} />
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </Panel>
         </div>

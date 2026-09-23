@@ -10,7 +10,8 @@
 // duration. A stage that throws is marked `failed`, the run is marked `failed` with
 // the stage named, and nothing is left stuck in `running`.
 
-import { getOrExtract } from './extraction.ts'
+import { documentFromBytes, getOrExtract } from './extraction.ts'
+import type { FetchedDocument } from './extraction.ts'
 import { describeUploadedInvoice, UPLOAD_BUCKET } from './uploads.ts'
 import type { ExtractionResult } from './extractionSchema.ts'
 import { supabase } from './supabase.ts'
@@ -49,7 +50,8 @@ import type {
   VendorRecord,
 } from '@/rules/types.ts'
 import { fallbackExplanation } from '@/rules/explain.ts'
-import { reasonSentence } from './reasonCopy.ts'
+import { modelLabel } from './format.ts'
+import { checksThatObjected, objectionSentence, reasonSentence } from './reasonCopy.ts'
 import type { ExplainDecisionRequest, ExplainDecisionResponse } from '@/rules/explain.ts'
 
 // ---------------------------------------------------------------------------
@@ -200,18 +202,37 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-// Best effort. A hash we cannot compute means the exact-duplicate check stands
-// down for this document; it must never stop the run.
-async function ensureFileHash(invoice: InvoiceRow, pdfUrl: string): Promise<string | null> {
-  if (invoice.file_hash) return invoice.file_hash
+/**
+ * The document's fingerprint, and the bytes it was taken from.
+ *
+ * Stage 1 has to download the document to hash it and stage 2 has to send the
+ * same bytes to the model, so the bytes are carried forward rather than fetched
+ * twice. On a large photograph that second round trip to Storage was pure waiting.
+ *
+ * Best effort throughout. A hash we cannot compute means the exact-duplicate check
+ * stands down for this document; it must never stop the run, and stage 2 falls
+ * back to fetching the file itself.
+ */
+interface IngestedFile {
+  hash: string | null
+  document: FetchedDocument | null
+}
+
+async function ensureFileHash(invoice: InvoiceRow, pdfUrl: string): Promise<IngestedFile> {
+  // Already fingerprinted, so there is nothing to download for. A document that
+  // still needs reading is fetched by stage 2 instead, and one whose extraction is
+  // cached is never fetched at all.
+  if (invoice.file_hash) return { hash: invoice.file_hash, document: null }
+
   try {
     const response = await fetch(pdfUrl)
-    if (!response.ok) return null
-    const hash = `sha256:${await sha256Hex(await response.arrayBuffer())}`
+    if (!response.ok) return { hash: null, document: null }
+    const bytes = await response.arrayBuffer()
+    const hash = `sha256:${await sha256Hex(bytes)}`
     await setInvoiceFileHash(invoice.id, hash)
-    return hash
+    return { hash, document: documentFromBytes(bytes, response.headers.get('content-type')) }
   } catch {
-    return null
+    return { hash: null, document: null }
   }
 }
 
@@ -418,6 +439,10 @@ async function concludeAsDuplicate(input: {
     matchedPo: null,
     explanation: finished.explanation ?? '',
     explanationSource: 'fallback',
+    explanationSettled: Promise.resolve<ExplanationOutcome>({
+      explanation: finished.explanation ?? '',
+      source: 'fallback',
+    }),
     checks: null,
     facts: null,
   }
@@ -476,14 +501,93 @@ export interface RunInvoiceOptions {
   onRunCreated?: (run: RunRow) => void
 }
 
+export interface ExplanationOutcome {
+  explanation: string
+  source: 'model' | 'fallback'
+}
+
+/**
+ * Stage 7, run after the verdict has been written.
+ *
+ * Nothing waits on this. It writes its own stage log, and on success replaces the
+ * run's deterministic summary with the model's wording. Every failure path ends in
+ * the fallback the run already carries, so there is nothing here that can leave a
+ * run without an explanation or in an unfinished state.
+ */
+async function explainRun(input: {
+  runId: string
+  request: ExplainDecisionRequest
+  enabled: boolean
+  runStage: <T>(
+    stage: PipelineStage,
+    stageInput: Json,
+    execute: () => Promise<StageOutcome<T>> | StageOutcome<T>,
+  ) => Promise<T>
+}): Promise<ExplanationOutcome> {
+  const fallback = fallbackExplanation(input.request)
+
+  try {
+    const outcome = await input.runStage<ExplanationOutcome>(
+      'explain',
+      input.request as unknown as Json,
+      async () => {
+        if (!input.enabled) {
+          return {
+            value: { explanation: fallback, source: 'fallback' },
+            output: { explanation: fallback, source: 'fallback' } as Json,
+            reasoning: 'Wrote the explanation from the decision itself.',
+          }
+        }
+
+        try {
+          const { data, error } = await supabase.functions.invoke<ExplainDecisionResponse>('explain-decision', {
+            body: input.request,
+          })
+          if (error) throw error
+          if (!data || !data.ok) throw new Error(data?.ok === false ? data.error : 'explain-decision returned no data')
+
+          return {
+            value: { explanation: data.explanation, source: 'model' },
+            output: { explanation: data.explanation, model: modelLabel(data.model), provider: data.provider } as Json,
+            reasoning: `Wrote up what was decided, in a sentence or two, using ${modelLabel(data.model)}.`,
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return {
+            value: { explanation: fallback, source: 'fallback' },
+            output: { explanation: fallback, source: 'fallback', error: message } as Json,
+            reasoning:
+              'Could not phrase the explanation, so we wrote it from the decision itself. The outcome is the same either way.',
+            flagged: true,
+          }
+        }
+      },
+    )
+
+    if (outcome.source === 'model' && outcome.explanation !== fallback) {
+      await updateRun(input.runId, { explanation: outcome.explanation }).catch(() => undefined)
+    }
+    return outcome
+  } catch {
+    // The stage log itself could not be written. The run already holds the
+    // deterministic summary, so there is nothing to repair and nothing to report.
+    return { explanation: fallback, source: 'fallback' }
+  }
+}
+
 export interface RunOutcome {
   run: RunRow
   invoice: InvoiceRow
   verdict: Verdict
   reasonCodes: ReasonCode[]
   matchedPo: string | null
+  // What the run carries the moment it completes: the deterministic summary. The
+  // model's wording, when there is one, arrives through `explanationSettled`.
   explanation: string
   explanationSource: 'model' | 'fallback'
+  // Resolves when stage 7 has finished, whatever it finished as. Nothing in the
+  // decision path waits on it.
+  explanationSettled: Promise<ExplanationOutcome>
   // Null on a run that stopped at stage 1, which is the duplicate short-circuit:
   // the document was never read, so there is nothing to have checked.
   checks: ValidationReport | null
@@ -536,11 +640,11 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
     // Stage 1 — ingest. Locates the document and records its content hash.
     const ingested = await runStage('ingest', { invoice_id: invoice.id, file_path: invoice.file_path }, async () => {
       const pdfUrl = pdfUrlFor(invoice)
-      const fileHash = await ensureFileHash(invoice, pdfUrl)
+      const { hash: fileHash, document } = await ensureFileHash(invoice, pdfUrl)
       const priorHashes = await loadPriorHashes(context, invoice)
       const duplicateOf = findExactDuplicate(fileHash, priorHashes)
       return {
-        value: { pdfUrl, fileHash, priorHashes, duplicateOf },
+        value: { pdfUrl, fileHash, document, priorHashes, duplicateOf },
         output: {
           pdf_url: pdfUrl,
           file_hash: fileHash,
@@ -580,7 +684,12 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
     // Stage 2 — extract. Reads through the cache; a cached extraction is not a
     // model call.
     const extraction = await runStage('extract', { pdf_url: ingested.pdfUrl }, async () => {
-      const cached = await getOrExtract(invoice.id, ingested.pdfUrl, invoice.invoice_number, { force: options.force })
+      const cached = await getOrExtract(invoice.id, ingested.pdfUrl, invoice.invoice_number, {
+        force: options.force,
+        // Stage 1 downloaded this document to fingerprint it. Sending those bytes
+        // straight on saves fetching the same file from Storage a second time.
+        document: ingested.document ?? undefined,
+      })
       return {
         value: cached,
         output: cached.data as unknown as Json,
@@ -687,19 +796,12 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
         parentRun,
       })
 
-      const failures = Object.entries(report)
-        .filter(([, value]) => value !== null && typeof value === 'object' && 'passed' in value && !value.passed)
-        .map(([name]) => name)
+      const failures = checksThatObjected(report as unknown as Record<string, unknown>)
 
       return {
         value: report,
         output: report as unknown as Json,
-        reasoning:
-          failures.length === 0
-            ? 'Every check that applies to this invoice passed.'
-            : failures.length === 1
-              ? 'One check objected.'
-              : `${failures.length} checks objected.`,
+        reasoning: objectionSentence(failures),
         flagged: failures.length > 0,
       }
     })
@@ -735,43 +837,15 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
       },
     }
 
-    // Stage 7 — explain. Presentational: a failure here never changes or blocks a
-    // verdict.
-    type ExplanationOutcome = { explanation: string; source: 'model' | 'fallback' }
-    const explained = await runStage<ExplanationOutcome>('explain', explainRequest as unknown as Json, async () => {
-      const fallback = fallbackExplanation(explainRequest)
-      if (options.explain === false) {
-        return {
-          value: { explanation: fallback, source: 'fallback' },
-          output: { explanation: fallback, source: 'fallback' } as Json,
-          reasoning: 'Wrote the explanation from the decision itself.',
-        }
-      }
-
-      try {
-        const { data, error } = await supabase.functions.invoke<ExplainDecisionResponse>('explain-decision', {
-          body: explainRequest,
-        })
-        if (error) throw error
-        if (!data || !data.ok) throw new Error(data?.ok === false ? data.error : 'explain-decision returned no data')
-
-        return {
-          value: { explanation: data.explanation, source: 'model' },
-          output: { explanation: data.explanation, model: data.model, provider: data.provider } as Json,
-          reasoning: 'Wrote up what was decided, in a sentence or two.',
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          value: { explanation: fallback, source: 'fallback' },
-          output: { explanation: fallback, source: 'fallback', error: message } as Json,
-          reasoning:
-            'Could not phrase the explanation, so we wrote it from the decision itself. The outcome is the same either way.',
-          flagged: true,
-        }
-      }
-    })
-
+    /**
+     * The verdict is settled here, and written here.
+     *
+     * Stage 7 used to sit between the decision and this write, so a person watched
+     * a spinner for another nineteen to thirty seconds after the rules had
+     * finished, waiting on a paragraph that cannot change the outcome. The run is
+     * completed on the deterministic summary instead, and the model's wording
+     * replaces it when and if it arrives.
+     */
     const finished = await updateRun(run.id, {
       status: 'complete',
       verdict: decision.verdict,
@@ -779,9 +853,15 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
       matched_po: poMatch.matched?.po_number ?? null,
       parent_run_id: checks.resubmission?.parent_run_id ?? null,
       changed_fields: (checks.resubmission?.changed_fields ?? null) as Json,
-      explanation: explained.explanation,
+      explanation: fallbackExplanation(explainRequest),
       finished_at: new Date().toISOString(),
     })
+
+    // Stage 7 — explain. Presentational, and deliberately off the critical path.
+    // Callers that need the final wording await `explanationSettled`; the screens
+    // read it off the run row when it lands.
+    const explanationSettled = explainRun({ runId: run.id, request: explainRequest, enabled: options.explain !== false, runStage })
+    if (options.explain === false) await explanationSettled
 
     return {
       run: finished,
@@ -789,8 +869,9 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
       verdict: decision.verdict,
       reasonCodes: decision.reason_codes,
       matchedPo: poMatch.matched?.po_number ?? null,
-      explanation: explained.explanation,
-      explanationSource: explained.source,
+      explanation: finished.explanation ?? '',
+      explanationSource: 'fallback',
+      explanationSettled,
       checks,
       facts,
     }
