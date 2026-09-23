@@ -45,6 +45,14 @@ export interface ExplainDecisionSuccess {
   model: string
   provider: string
   duration_ms: number
+  /**
+   * How many tokens the model spent thinking before it answered, as it reports
+   * them. Stage 7 describes a decision that is already settled, so the request
+   * asks for none. Anything above zero means the budget was not applied, and null
+   * means the provider did not say. Carried into the stage log so the question is
+   * answerable from a run rather than by guessing.
+   */
+  thought_tokens?: number | null
 }
 
 export interface ExplainDecisionFailure {

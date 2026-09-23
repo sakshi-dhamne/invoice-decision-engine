@@ -27,6 +27,7 @@ import {
   IDENTITY_CHANGE_LABEL,
   PAYMENT_CHANGE_LABEL,
   VENDOR_HISTORY_EMPTY,
+  vendorAddedBy,
   vendorFieldLabel,
 } from '@/lib/reasonCopy.ts'
 import { bankChangedRecently, daysSinceBankChange } from '@/lib/vendorEdit.ts'
@@ -254,16 +255,20 @@ export default function Vendors() {
 
                         {/* When, and by whom */}
                         <div className="text-xs text-muted">
-                          <p className="tnum">Added {shortDate(vendor.created_at)}</p>
+                          {/* A vendor with no name against it came with the
+                              starting data. The onboarding form has required one
+                              since it started writing the column, so a null here
+                              is the seed rather than a lapse. */}
                           <p className="truncate" title={vendor.added_by ?? undefined}>
-                            {vendor.added_by ? `by ${vendor.added_by}` : 'by somebody not recorded'}
+                            {vendorAddedBy(vendor.added_by)}
                           </p>
+                          <p className="tnum">{shortDate(vendor.created_at)}</p>
                           {vendor.updated_at ? (
                             <>
-                              <p className="mt-1 tnum">Changed {shortDate(vendor.updated_at)}</p>
-                              <p className="truncate" title={vendor.updated_by ?? undefined}>
-                                {vendor.updated_by ? `by ${vendor.updated_by}` : 'by somebody not recorded'}
+                              <p className="mt-1 truncate" title={vendor.updated_by ?? undefined}>
+                                {vendor.updated_by ? `Changed by ${vendor.updated_by}` : 'Changed'}
                               </p>
+                              <p className="tnum">{shortDate(vendor.updated_at)}</p>
                             </>
                           ) : (
                             <p className="mt-1">Never changed</p>

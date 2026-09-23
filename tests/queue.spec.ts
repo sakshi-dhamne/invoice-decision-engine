@@ -253,12 +253,17 @@ describe('raising an order for a held invoice', () => {
 
   it('will not save until somebody types a value', () => {
     const inputs = emptyOrderInputs('2026-09-20')
-    expect(orderIsComplete(inputs, 'MER-1')).toBe(false)
-    expect(orderIsComplete({ ...inputs, totalAmount: '84000' }, 'MER-1')).toBe(true)
+    expect(orderIsComplete(inputs)).toBe(false)
+    expect(orderIsComplete({ ...inputs, totalAmount: '84000' })).toBe(true)
   })
 
-  it('will not save against a vendor we do not have', () => {
-    expect(orderIsComplete({ ...emptyOrderInputs('2026-09-20'), totalAmount: '84000' }, null)).toBe(false)
+  it('enables the button on the required fields alone, not on the vendor lookup', () => {
+    // The button used to be gated on a resolved vendor as well, so a page that had
+    // failed to find one left it dead with every field correctly filled in and
+    // nothing on screen explaining why.
+    const filled = { ...emptyOrderInputs('2026-09-20'), totalAmount: '84000' }
+    expect(orderIsComplete(filled)).toBe(true)
+    expect(orderIsComplete({ ...filled, issuedDate: '' })).toBe(false)
   })
 
   it.each([
@@ -304,5 +309,33 @@ describe('raising an order for a held invoice', () => {
 
   it('still produces an order number for a vendor whose name has no letters', () => {
     expect(orderNumberFor('!!!', () => 0.5).startsWith('PO-ORDER-')).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fields the browser must not fill in
+// ---------------------------------------------------------------------------
+
+// Two fields in this product are deliberately blank, and both were reported as
+// arriving pre-populated with the exact figure off the invoice. Neither has a code
+// path that sets them: autofill and session restore write into the DOM node, and a
+// controlled React input does not notice because its own state has not changed.
+describe('the order value cannot be filled in by anything but a person', () => {
+  const primitives = readFileSync(join(repoRoot, 'src/components/Primitives.tsx'), 'utf8')
+  const orderNew = readFileSync(join(repoRoot, 'src/pages/OrderNew.tsx'), 'utf8')
+
+  it('starts empty, from a function with no invoice in scope to read', () => {
+    expect(emptyOrderInputs('2026-09-23').totalAmount).toBe('')
+  })
+
+  it('uses the input that corrects the DOM after paint', () => {
+    expect(orderNew).toMatch(/<UnfilledInput\s+id="order-value"/)
+    // The correction itself: state is the authority, the DOM is made to agree.
+    expect(primitives).toContain('if (field && field.value !== value) field.value = value')
+  })
+
+  it('never hands the invoice total to the field', () => {
+    expect(orderNew).not.toMatch(/totalAmount:\s*String\(/)
+    expect(orderNew).not.toMatch(/set\('totalAmount',\s*(invoice|String\(invoice)/)
   })
 })

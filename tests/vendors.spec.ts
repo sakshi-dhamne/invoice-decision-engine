@@ -22,6 +22,7 @@ import {
   vendorPatchFor,
   type VendorEditValues,
 } from '../src/lib/vendorEdit.ts'
+import { VENDOR_FROM_SEED, vendorAddedBy } from '../src/lib/reasonCopy.ts'
 import type { VendorRow } from '../src/lib/database.types.ts'
 
 // ---------------------------------------------------------------------------
@@ -243,5 +244,25 @@ describe('a bank account that moved recently', () => {
   it('treats the boundary day as inside the window', () => {
     const boundary = new Date(asOf.getTime() - RECENT_BANK_CHANGE_DAYS * 86_400_000).toISOString()
     expect(bankChangedRecently(movedOn(boundary), asOf)).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Who put this vendor on the list
+// ---------------------------------------------------------------------------
+
+// Most of the vendor list came with the corpus. Reading the empty `added_by` on
+// those rows as "by somebody not recorded" accused the starting data of a lapse
+// that never happened, on nearly every row on the page.
+describe('a vendor that came with the starting data', () => {
+  it('says so, rather than blaming somebody for not recording a name', () => {
+    expect(vendorAddedBy(null)).toBe(VENDOR_FROM_SEED)
+    expect(vendorAddedBy(undefined)).toBe(VENDOR_FROM_SEED)
+    expect(vendorAddedBy('   ')).toBe(VENDOR_FROM_SEED)
+    expect(VENDOR_FROM_SEED).not.toContain('not recorded')
+  })
+
+  it('keeps the real name for a vendor a person actually added', () => {
+    expect(vendorAddedBy('Asha')).toBe('Added by Asha')
   })
 })

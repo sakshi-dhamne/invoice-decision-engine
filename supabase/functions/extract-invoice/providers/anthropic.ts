@@ -3,7 +3,7 @@ import {
   describeExtractionResultShapeError,
   type ExtractionResult,
 } from '../../../../src/lib/extractionSchema.ts'
-import { ProviderError, type ExtractionProvider, type TextProvider } from './types.ts'
+import { ProviderError, type ExtractionProvider, type TextCompletion, type TextProvider } from './types.ts'
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -172,7 +172,9 @@ export function createAnthropicTextProvider(model: string, apiKey: string): Text
       if (text.length === 0) {
         throw new ProviderError(`Anthropic response had no text block: ${JSON.stringify(payload)}`, 502)
       }
-      return text
+      // No extended thinking is requested here, so there is none to report and a
+      // zero is the honest answer rather than an absence.
+      return { text, thoughtTokens: 0 } satisfies TextCompletion
     },
   }
 }

@@ -4,8 +4,9 @@
 // Nothing here recomputes a verdict. The run holds what the rules decided; the
 // stage logs hold what they decided it on. This reads and shapes.
 
-import { getInvoiceById, getPurchaseOrders, getRunById, getStageLogs, getVendors } from './queries.ts'
+import { getInvoiceById, getPurchaseOrders, getRunById, getStageLogs } from './queries.ts'
 import { pdfUrlFor } from './pipeline.ts'
+import { loadVendorMaster, resolveVendorForDocument } from './vendorLookup.ts'
 import { REASON_CODE_FIELDS } from '@/rules/validate.ts'
 import type { FieldChange } from '@/rules/validate.ts'
 import type { ReasonCode } from '@/rules/types.ts'
@@ -100,7 +101,13 @@ export const BUSINESS_DIFF_FIELDS = [
 export interface DecisionData {
   run: RunRow
   invoice: InvoiceRow | null
+  // Resolved against the vendor master as it stands, not read off the invoice
+  // row's seeded column. A vendor added since this run was decided is found.
   vendor: VendorRow | null
+  // True when the printed name does not resolve to any vendor we hold right now.
+  // The run's UNKNOWN_VENDOR code says what was true when it was decided, which is
+  // not the same question: somebody may have added the vendor since.
+  vendorUnknownNow: boolean
   order: PurchaseOrderRow | null
   stages: StageLogRow[]
   extraction: Record<string, unknown> | null
@@ -120,14 +127,27 @@ export async function loadDecision(runId: string): Promise<DecisionData | null> 
   const run = await getRunById(runId)
   if (!run) return null
 
-  const [stages, orders, vendors, invoice] = await Promise.all([
+  const [stages, orders, master, invoice] = await Promise.all([
     getStageLogs(runId),
     getPurchaseOrders(),
-    getVendors(),
+    loadVendorMaster(),
     run.invoice_id ? getInvoiceById(run.invoice_id) : Promise.resolve(null),
   ])
 
   const extraction = asRecord(stages.find((stage) => stage.stage === 'extract')?.output)
+
+  // The name as the document printed it, which is what stage 3 resolved and what
+  // this resolves again now.
+  const printedName =
+    (typeof extraction?.vendor_name === 'string' ? extraction.vendor_name : null) ??
+    invoice?.vendor_name_as_printed ??
+    null
+  const resolved = resolveVendorForDocument({
+    printedName,
+    storedVendorId: invoice?.vendor_id,
+    vendors: master.vendors,
+    rules: master.rules,
+  })
   const validations = asRecord(stages.find((stage) => stage.stage === 'validate')?.output)
   const codes = run.reason_codes ?? []
 
@@ -168,7 +188,8 @@ export async function loadDecision(runId: string): Promise<DecisionData | null> 
   return {
     run,
     invoice,
-    vendor: invoice?.vendor_id ? (vendors.find((entry) => entry.id === invoice.vendor_id) ?? null) : null,
+    vendor: resolved.vendor,
+    vendorUnknownNow: resolved.vendor === null,
     order: orders.find((entry) => entry.po_number === run.matched_po) ?? null,
     stages,
     extraction,

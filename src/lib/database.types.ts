@@ -133,6 +133,9 @@ export type RunRow = {
   touched_by_human: boolean
   // Who overrode the verdict, when someone did.
   touched_by: string | null
+  // When they did. Null on a run overridden before this was recorded, which reads
+  // as a missing time rather than being filled in with a guess.
+  approved_at: string | null
   // Set when a person filed a duplicate away. The verdict and reason codes stay
   // exactly as the rules left them; this is an extra fact about the run.
   discarded_at: string | null

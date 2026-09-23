@@ -2,7 +2,7 @@ import {
   GEMINI_RESPONSE_SCHEMA,
   parseExtractionResponseText,
 } from '../../../../src/lib/extractionSchema.ts'
-import { ProviderError, type ExtractionProvider, type TextProvider } from './types.ts'
+import { ProviderError, type ExtractionProvider, type TextCompletion, type TextProvider } from './types.ts'
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
@@ -103,11 +103,34 @@ export function createGeminiTextProvider(model: string, apiKey: string): TextPro
       }
 
       const payload = await response.json()
-      const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text
-      if (typeof text !== 'string' || text.trim().length === 0) {
+
+      /**
+       * The answer, and not the thinking.
+       *
+       * A model that reasons before answering can return the reasoning as parts of
+       * its own, marked `thought: true`, ahead of the answer. Reading `parts[0]`
+       * then returns a thought summary rather than the explanation, or nothing at
+       * all. Joining the parts that are not thoughts is correct whether or not any
+       * thinking happened.
+       */
+      const parts: { text?: string; thought?: boolean }[] = payload?.candidates?.[0]?.content?.parts ?? []
+      const text = parts
+        .filter((part) => part?.thought !== true && typeof part?.text === 'string')
+        .map((part) => part.text ?? '')
+        .join('')
+        .trim()
+
+      if (text.length === 0) {
         throw new ProviderError(`Gemini response had no text part: ${JSON.stringify(payload)}`, 502)
       }
-      return text.trim()
+
+      // What the model actually spent thinking, as it reports it. Zero means the
+      // budget on the request was honoured; anything else means it was not.
+      const thoughtTokens = payload?.usageMetadata?.thoughtsTokenCount
+      return {
+        text,
+        thoughtTokens: typeof thoughtTokens === 'number' ? thoughtTokens : null,
+      } satisfies TextCompletion
     },
   }
 }

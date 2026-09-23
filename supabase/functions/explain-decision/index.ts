@@ -111,6 +111,15 @@ Deno.serve(async (req: Request) => {
     },
   })
 
+  // Logged as well as returned, so the answer is in the function logs even for a
+  // run nobody opens: a non-zero count here means the thinking budget on the
+  // request was not applied, whatever the request asked for.
+  if (result.ok) {
+    console.log(
+      `explain-decision thought_tokens=${result.value.thoughtTokens ?? 'not reported'} model=${result.entry.model} duration_ms=${result.duration_ms}`,
+    )
+  }
+
   if (!result.ok) {
     // The caller falls back to the deterministic summary. This is a degraded
     // response, not a failed run.
@@ -120,10 +129,11 @@ Deno.serve(async (req: Request) => {
   return jsonResponse(
     {
       ok: true,
-      explanation: result.value,
+      explanation: result.value.text,
       model: result.entry.model,
       provider: result.entry.provider,
       duration_ms: result.duration_ms,
+      thought_tokens: result.value.thoughtTokens,
     } satisfies ExplainDecisionResponse,
     200,
   )

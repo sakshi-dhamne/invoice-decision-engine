@@ -292,13 +292,18 @@ describe('how it ran reads as English', () => {
 describe('vendor onboarding keeps payment details off the invoice', () => {
   const source = readFileSync(join(repoRoot, 'src/pages/VendorNew.tsx'), 'utf8')
 
-  it.each(['setBankAccount', 'setIfsc', 'setConfirmedBy'])('%s is only ever called from its own input', (setter) => {
+  it.each(['setBankAccount', 'setIfsc', 'setConfirmedBy'])('%s is only ever wired to its own input', (setter) => {
+    // Passed straight to the field's own onValueChange and called nowhere else.
+    // Any other call site is a prefill.
+    expect(source).toContain(`onValueChange={${setter}}`)
     const calls = [...source.matchAll(new RegExp(`${setter}\\(([^)]*)\\)`, 'g'))].map((match) => match[1].trim())
-    // The useState declaration's own setter name and the onChange handler are the
-    // only legitimate callers. Anything else is a prefill.
-    for (const argument of calls) {
-      expect(argument, `${setter} was called with ${argument}`).toBe('event.target.value')
-    }
+    expect(calls, `${setter} is called directly at ${calls.length} place(s)`).toEqual([])
+  })
+
+  it.each(['bank-account', 'ifsc', 'confirmed-by'])('%s is a field the browser cannot fill in', (id) => {
+    // Autofill and session restore write into the DOM node behind React's back.
+    // UnfilledInput is what corrects that; a plain input here would not.
+    expect(source).toMatch(new RegExp(`<UnfilledInput\\s+id="${id}"`))
   })
 
   it('seeds all three from the module that has no document to read', () => {

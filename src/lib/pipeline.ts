@@ -548,7 +548,16 @@ async function explainRun(input: {
 
           return {
             value: { explanation: data.explanation, source: 'model' },
-            output: { explanation: data.explanation, model: modelLabel(data.model), provider: data.provider } as Json,
+            output: {
+              explanation: data.explanation,
+              model: modelLabel(data.model),
+              provider: data.provider,
+              // Zero means the model did as it was asked and thought about nothing
+              // before answering. Anything else means the budget on the request was
+              // not applied, which is worth having on the record rather than
+              // inferring from how long the stage took.
+              thought_tokens: data.thought_tokens ?? null,
+            } as Json,
             reasoning: `Wrote up what was decided, in a sentence or two, using ${modelLabel(data.model)}.`,
           }
         } catch (error) {

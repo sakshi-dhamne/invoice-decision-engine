@@ -17,7 +17,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
-import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner } from '@/components/Primitives.tsx'
+import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner, UnfilledInput } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -325,12 +325,11 @@ export default function VendorNew() {
                       <label htmlFor="bank-account" className={cn(labelClass, blockClasses.text)}>
                         Account number (required)
                       </label>
-                      <input
+                      <UnfilledInput
                         id="bank-account"
                         className={cn(inputClass, 'identifier')}
                         value={bankAccount}
-                        onChange={(event) => setBankAccount(event.target.value)}
-                        autoComplete="off"
+                        onValueChange={setBankAccount}
                         required
                       />
                     </div>
@@ -338,12 +337,11 @@ export default function VendorNew() {
                       <label htmlFor="ifsc" className={cn(labelClass, blockClasses.text)}>
                         IFSC (required)
                       </label>
-                      <input
+                      <UnfilledInput
                         id="ifsc"
                         className={cn(inputClass, 'identifier')}
                         value={ifsc}
-                        onChange={(event) => setIfsc(event.target.value)}
-                        autoComplete="off"
+                        onValueChange={setIfsc}
                         required
                       />
                     </div>
@@ -353,13 +351,12 @@ export default function VendorNew() {
                     <label htmlFor="confirmed-by" className={cn(labelClass, blockClasses.text)}>
                       Who confirmed these, and how (required)
                     </label>
-                    <input
+                    <UnfilledInput
                       id="confirmed-by"
                       className={inputClass}
                       value={confirmedBy}
-                      onChange={(event) => setConfirmedBy(event.target.value)}
+                      onValueChange={setConfirmedBy}
                       placeholder="Name, and the number you called"
-                      autoComplete="off"
                       required
                     />
                   </div>
