@@ -257,14 +257,29 @@ describe('how it ran reads as English', () => {
     ['a raw check-name list', /Failed: \$\{/],
     ['a rule number and an arrow', /Rule \$\{[^}]*matched_rule/],
     ['a score to three decimals', /toFixed\(3\)/],
+    // A count with nothing a reader could act on. The sentence now names them.
+    ['a bare count of objections', /\$\{[^}]*\}\s*checks objected\./],
+    // The chain addresses its entries as provider:model. That is configuration,
+    // not a name, and it was reaching the screen.
+    ['a provider-prefixed model', /\$\{[^}]*provider[^}]*\}:\$\{/],
   ])('says nothing about %s', (_label, pattern) => {
     expect(pattern.test(strings)).toBe(false)
+  })
+
+  it('names the checks that objected, through reasonCopy', () => {
+    expect(pipeline).toContain('objectionSentence(failures)')
+    expect(pipeline).toContain('checksThatObjected(')
+  })
+
+  it('names the model through the formatter that drops the provider prefix', () => {
+    expect(pipeline).toContain('modelLabel(data.model)')
   })
 
   it('gives a failed run something to say', () => {
     expect(FAILED_RUN_LABEL).toBe('Failed')
     expect(FAILED_RUN_SENTENCE).toBe('The file could not be read.')
   })
+
 })
 
 // ---------------------------------------------------------------------------
@@ -279,22 +294,21 @@ describe('vendor onboarding keeps payment details off the invoice', () => {
 
   it.each(['setBankAccount', 'setIfsc', 'setConfirmedBy'])('%s is only ever called from its own input', (setter) => {
     const calls = [...source.matchAll(new RegExp(`${setter}\\(([^)]*)\\)`, 'g'))].map((match) => match[1].trim())
-    // Two callers are legitimate: the useState declaration's own setter name, and
-    // the onChange handler. Anything else is a prefill.
+    // The useState declaration's own setter name and the onChange handler are the
+    // only legitimate callers. Anything else is a prefill.
     for (const argument of calls) {
       expect(argument, `${setter} was called with ${argument}`).toBe('event.target.value')
     }
   })
 
-  it.each(['bankAccount', 'ifsc', 'confirmedBy'])('%s starts empty', (field) => {
-    const declaration = new RegExp(`const \\[${field}, set\\w+\\] = useState\\(''\\)`)
-    expect(declaration.test(source), `${field} does not start as an empty string`).toBe(true)
+  it('seeds all three from the module that has no document to read', () => {
+    expect(source).toContain("useState(emptyPaymentFields().bankAccount)")
+    expect(source).toContain("useState(emptyPaymentFields().ifsc)")
+    expect(source).toContain("useState(emptyPaymentFields().confirmedBy)")
   })
 
-  it('requires all three before the form can be submitted', () => {
-    expect(source).toContain('bankAccount.trim().length > 0')
-    expect(source).toContain('ifsc.trim().length > 0')
-    expect(source).toContain('confirmedBy.trim().length > 0')
+  it('gates the form on paymentFieldsComplete', () => {
+    expect(source).toContain('paymentFieldsComplete({ bankAccount, ifsc, confirmedBy })')
     expect(source).toContain('disabled={!ready || submitting !== null}')
   })
 
@@ -304,9 +318,11 @@ describe('vendor onboarding keeps payment details off the invoice', () => {
     )
   })
 
-  it('shows the printed account for comparison without letting it reach a field', () => {
+  it('shows the printed account and IFSC for comparison without letting either reach a field', () => {
     expect(source).toContain('printedBankAccount')
-    // The value read off the document is displayed, never handed to a setter.
+    expect(source).toContain('printedIfsc')
+    // Displayed, never handed to a setter.
     expect(source).not.toMatch(/setBankAccount\(\s*printedBankAccount/)
+    expect(source).not.toMatch(/setIfsc\(\s*printedIfsc/)
   })
 })

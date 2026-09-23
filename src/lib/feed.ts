@@ -33,6 +33,34 @@ export interface Feed {
   vendors: VendorRow[]
 }
 
+/**
+ * The most recent run of each invoice record.
+ *
+ * Keyed on the invoice record, not on the invoice number. An invoice re-run after
+ * its vendor was onboarded has two runs, and the queue showed both: `INV-ZTR-0001`
+ * appeared as Held and as Blocked at once, which is two answers to one question.
+ * Only the latest is where the document stands now; the earlier ones are its
+ * History.
+ *
+ * Two separate records that happen to share an invoice number each keep their own
+ * latest run, and that is deliberate. An uploaded copy of a document is a
+ * different record from the original, both are real, and collapsing them on the
+ * number would hide the copy that was blocked behind the original that was not.
+ *
+ * Takes runs already ordered newest first, which is how the query returns them.
+ */
+export function latestRunPerInvoice(runs: readonly RunRow[]): RunRow[] {
+  const seen = new Set<string>()
+  const latest: RunRow[] = []
+  for (const run of runs) {
+    const record = run.invoice_id ?? run.id
+    if (seen.has(record)) continue
+    seen.add(record)
+    latest.push(run)
+  }
+  return latest
+}
+
 /** The stable identity of a row. Short enough for a URL, long enough to be unique. */
 export function shortRunId(runId: string): string {
   return runId.slice(0, 8)
@@ -104,6 +132,19 @@ export function isDuplicate(row: FeedRow): boolean {
   return (row.run.reason_codes ?? []).includes('EXACT_DUPLICATE')
 }
 
+/**
+ * Whether this document was put in by hand rather than seeded.
+ *
+ * `storage_path` is set only by the upload flow, so it is the whole test. This is
+ * metadata about how a document arrived, not a kind of invoice: an uploaded
+ * document is checked by the same rules, appears in the same list and carries the
+ * same verdicts. It is worth being able to filter on because somebody who has just
+ * uploaded a stack of documents wants to find them again.
+ */
+export function wasUploaded(row: FeedRow): boolean {
+  return Boolean(row.invoice?.storage_path)
+}
+
 export function hasFailed(run: RunRow): boolean {
   return run.status === 'failed'
 }
@@ -118,13 +159,14 @@ export const NEEDS_A_PERSON: readonly Verdict[] = ['REVIEW', 'HOLD', 'BLOCK']
 /**
  * Whether this row is an open exception.
  *
- * A run that failed outright is one too: nobody decided anything about it, and a
- * document sitting unread is exactly the thing a person has to deal with. A run
- * somebody has already discarded is not.
+ * An exception is a decision that needs a person. A run that failed outright is
+ * not one: nothing was decided about it, there is no verdict to agree or disagree
+ * with, and nothing on the queue's screen applies to it. Those belong on Invoices
+ * under the Failed filter, where the document can be removed and sent again. A run
+ * somebody has already discarded is not an exception either.
  */
 export function needsAPerson(run: RunRow): boolean {
-  if (wasDiscarded(run)) return false
-  if (hasFailed(run)) return true
+  if (wasDiscarded(run) || hasFailed(run)) return false
   return run.status === 'complete' && run.verdict !== null && NEEDS_A_PERSON.includes(run.verdict)
 }
 

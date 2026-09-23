@@ -89,6 +89,20 @@ export function fileSize(bytes: number): string {
 }
 
 /**
+ * A model's name, as a person should read it.
+ *
+ * The provider chain addresses its entries as "provider:model" because that is
+ * how the chain is configured, and that form was reaching the screen: nobody needs
+ * to be told that gemini-3.5-flash-lite is a Gemini model. The prefix is dropped
+ * wherever the name is shown.
+ */
+export function modelLabel(model: string | null | undefined): string {
+  if (!model) return 'Not recorded'
+  const separator = model.indexOf(':')
+  return separator === -1 ? model : model.slice(separator + 1)
+}
+
+/**
  * References the system keeps for itself.
  *
  * A file hash, a row id and a storage key are how this software finds things

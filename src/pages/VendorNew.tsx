@@ -24,6 +24,8 @@ import { cn } from '@/lib/utils'
 import { money, shortDate } from '@/lib/format.ts'
 import { runInvoice } from '@/lib/pipeline.ts'
 import { createVendor, getInvoiceById, getRunById, getStageLogs, updateRun } from '@/lib/queries.ts'
+import { recordVendorCreated } from '@/lib/vendorHistory.ts'
+import { emptyPaymentFields, identityPrefill, paymentFieldsComplete } from '@/lib/vendorForm.ts'
 import type { InvoiceRow, RunRow } from '@/lib/database.types.ts'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -63,10 +65,16 @@ export default function VendorNew() {
   const [emailDomain, setEmailDomain] = useState('')
   const [alsoKnownAs, setAlsoKnownAs] = useState('')
 
-  // Where payment goes. Never prefilled.
-  const [bankAccount, setBankAccount] = useState('')
-  const [ifsc, setIfsc] = useState('')
-  const [confirmedBy, setConfirmedBy] = useState('')
+  // Where payment goes. Never prefilled, and the initial value comes from a
+  // function that takes no document, so there is nothing here for a later change
+  // to thread an extracted value into. See src/lib/vendorForm.ts.
+  const [bankAccount, setBankAccount] = useState(emptyPaymentFields().bankAccount)
+  const [ifsc, setIfsc] = useState(emptyPaymentFields().ifsc)
+  const [confirmedBy, setConfirmedBy] = useState(emptyPaymentFields().confirmedBy)
+  // Who is doing the adding. Recorded on the vendor so the list can say who put
+  // each company on it, which is the first question asked of a vendor nobody
+  // recognises.
+  const [addedBy, setAddedBy] = useState('')
 
   const load = useCallback(async () => {
     if (!fromRunId) {
@@ -88,13 +96,11 @@ export default function VendorNew() {
       setInvoice(doc)
       setExtraction(read)
 
-      // Identity, taken from the document. This is the half that may be prefilled.
-      const printedName =
-        (typeof read?.vendor_name === 'string' ? read.vendor_name : null) ?? doc?.vendor_name_as_printed ?? ''
-      setLegalName(printedName)
-      setAlsoKnownAs(printedName)
-      const remitTo = typeof read?.remit_to_name === 'string' ? read.remit_to_name : null
-      if (remitTo && remitTo !== printedName) setAlsoKnownAs(`${printedName}, ${remitTo}`)
+      // Identity, taken from the document. This is the half that may be prefilled,
+      // and the only half: identityPrefill returns nothing about payment.
+      const identity = identityPrefill(read, doc?.vendor_name_as_printed ?? null)
+      setLegalName(identity.legalName)
+      setAlsoKnownAs(identity.alsoKnownAs)
       setLoaded(true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The held invoice could not be loaded.')
@@ -111,11 +117,18 @@ export default function VendorNew() {
     return fromExtraction ?? invoice?.bank_account_printed ?? 'Not read'
   }, [extraction, invoice])
 
+  // Shown beside the account for the same reason the account is shown: both have
+  // to be read back on the phone, and an account number alone does not identify a
+  // branch.
+  const printedIfsc = useMemo(
+    () => (typeof extraction?.bank_ifsc === 'string' ? extraction.bank_ifsc : null) ?? 'Not read',
+    [extraction],
+  )
+
   const ready =
     legalName.trim().length > 0 &&
-    bankAccount.trim().length > 0 &&
-    ifsc.trim().length > 0 &&
-    confirmedBy.trim().length > 0
+    addedBy.trim().length > 0 &&
+    paymentFieldsComplete({ bankAccount, ifsc, confirmedBy })
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -125,8 +138,11 @@ export default function VendorNew() {
     setError(null)
 
     try {
+      const now = new Date().toISOString()
+      const vendorId = vendorIdFor(legalName)
+
       await createVendor({
-        id: vendorIdFor(legalName),
+        id: vendorId,
         legal_name: legalName.trim(),
         status: 'active',
         aliases: alsoKnownAs
@@ -136,10 +152,27 @@ export default function VendorNew() {
         bank_account: bankAccount.trim(),
         bank_ifsc: ifsc.trim(),
         bank_confirmed_by: confirmedBy.trim(),
+        // Dated, so the confirmation can be aged. A note with no date cannot say
+        // whether the check happened this week or three years ago.
+        bank_confirmed_at: now,
         gstin: gstin.trim() || null,
         address: address.trim() || null,
         email_domain: emailDomain.trim() || null,
+        added_by: addedBy.trim(),
       })
+
+      // The first entry in this vendor's history, so the account it was created
+      // with is on the trail rather than only in the row it will later be edited
+      // out of. Best effort: the vendor exists either way, and a missing history
+      // table must not strand a person on a held invoice.
+      await recordVendorCreated({
+        vendorId,
+        account: bankAccount.trim(),
+        ifsc: ifsc.trim(),
+        addedBy: addedBy.trim(),
+        verificationNote: confirmedBy.trim(),
+        at: now,
+      }).catch(() => undefined)
 
       setSubmitting('Checking the invoice again')
       let newRunId: string | null = null
@@ -326,9 +359,27 @@ export default function VendorNew() {
                       value={confirmedBy}
                       onChange={(event) => setConfirmedBy(event.target.value)}
                       placeholder="Name, and the number you called"
+                      autoComplete="off"
                       required
                     />
                   </div>
+                </div>
+              </Panel>
+
+              <Panel>
+                <PanelHeading>Your name</PanelHeading>
+                <div className="px-5 py-5">
+                  <label htmlFor="added-by" className={labelClass}>
+                    Who is adding this vendor (required)
+                  </label>
+                  <input
+                    id="added-by"
+                    className={inputClass}
+                    value={addedBy}
+                    onChange={(event) => setAddedBy(event.target.value)}
+                    placeholder="Your name"
+                    required
+                  />
                 </div>
               </Panel>
 
@@ -339,7 +390,7 @@ export default function VendorNew() {
                 </Button>
                 {!ready ? (
                   <p className="text-sm text-muted">
-                    Fill in the registered name and all three payment fields to continue.
+                    Fill in the registered name, your name and all three payment fields to continue.
                   </p>
                 ) : null}
               </div>
@@ -386,9 +437,10 @@ export default function VendorNew() {
                   <div className={cn('rounded-md border px-3 py-2.5', blockClasses.panel)}>
                     <p className={cn('text-xs font-medium', blockClasses.text)}>Bank account printed on the invoice</p>
                     <p className={cn('identifier mt-1 text-sm', blockClasses.text)}>{printedBankAccount}</p>
+                    <p className={cn('mt-2 text-xs font-medium', blockClasses.text)}>IFSC printed on the invoice</p>
+                    <p className={cn('identifier mt-1 text-sm', blockClasses.text)}>{printedIfsc}</p>
                     <p className={cn('mt-2 text-xs', blockClasses.text)}>
-                      Shown so you can compare it with what the vendor tells you on the phone. It is deliberately not
-                      filled into the form.
+                      Shown so you can read both back to the vendor on the phone. Neither is filled into the form.
                     </p>
                   </div>
                 </div>

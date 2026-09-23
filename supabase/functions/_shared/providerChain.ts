@@ -40,6 +40,18 @@ export interface Attempt {
 
 export class TimeoutError extends Error {}
 
+/**
+ * How an entry is named in anything a person might read.
+ *
+ * The chain is configured as "provider:model" and is addressed that way
+ * internally, but that form was reaching the screen through an error message.
+ * Nobody needs to be told that gemini-3.5-flash-lite is a Gemini model, and a
+ * colon between two words is not how a name is written.
+ */
+export function describeEntry(entry: ChainEntry): string {
+  return entry.model
+}
+
 export function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -163,7 +175,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
           return {
             ok: false,
             status: 502,
-            error: `${entry.provider}:${entry.model} request failed (${status}): ${message}`,
+            error: `${describeEntry(entry)} request failed (${status}): ${message}`,
             duration_ms,
           }
         }
@@ -178,8 +190,8 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
   const duration_ms = Math.round(performance.now() - startedAt)
   const attemptsSummary =
     attempts.length > 0
-      ? attempts.map((attempt) => `${attempt.provider}:${attempt.model} → ${attempt.status}`).join(', ')
-      : 'none — chain empty or every entry skipped for a missing API key'
+      ? attempts.map((attempt) => `${attempt.model} returned ${attempt.status}`).join(', ')
+      : 'none, because the chain was empty or every entry was skipped for a missing API key'
 
   console.log(
     `${options.label} exhausted ${options.logContext ?? ''} duration_ms=${duration_ms} attempts=[${attemptsSummary}]`,

@@ -12,22 +12,34 @@ import { Check, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { dateAndTime, evidenceValue, fileNameOf, humanKey, money, shortDate } from '@/lib/format.ts'
-import { duplicateOfSentence, FAILED_RUN_SENTENCE, reasonSentence, verdictTone } from '@/lib/reasonCopy.ts'
-import { loadDecision, readFields, type DecisionData, type OrderLine } from '@/lib/decisionData.ts'
+import {
+  BANK_CHANGED_RECENTLY_LABEL,
+  BANK_CONFIRMED_LABEL,
+  BANK_CONFIRMED_MISSING,
+  bankChangedRecentlySentence,
+  duplicateOfSentence,
+  FAILED_RUN_SENTENCE,
+  reasonSentence,
+  verdictTone,
+} from '@/lib/reasonCopy.ts'
+import { bankChangedRecently, daysSinceBankChange } from '@/lib/vendorEdit.ts'
+import { approverOf, loadDecision, readFields, type DecisionData, type OrderLine } from '@/lib/decisionData.ts'
 import { discardRun, recordOverride, removeFailedRun } from '@/lib/queries.ts'
+import { supabase } from '@/lib/supabase.ts'
 import { duplicateFromStages } from '@/lib/feed.ts'
 import { AskVendorDialog } from './AskVendorDialog.tsx'
 import { DiscardDialog } from './DiscardDialog.tsx'
 import { DocumentViewer } from './DocumentViewer.tsx'
 import { OverrideDialog } from './OverrideDialog.tsx'
 import {
+  DecisionSkeleton,
   EmptyState,
   ErrorNote,
   LabelValueGrid,
-  Loading,
   OutcomeChip,
   Panel,
   PanelHeading,
+  Skeleton,
 } from './Primitives.tsx'
 import { tone } from './tone.ts'
 
@@ -74,29 +86,66 @@ export function DecisionDetail({
   // a stale idea of what this invoice is.
   const duplicateRef = useRef(false)
 
+  /**
+   * Which decision this pane is currently showing, or waiting for.
+   *
+   * A fetch started for one invoice can land after the reader has moved to
+   * another. Comparing against this on arrival is what stops the slower of two
+   * responses painting itself over the newer selection.
+   */
+  const showing = useRef<string | null>(runId)
+
   const load = useCallback(async () => {
     if (!runId) {
       setData(null)
       return
     }
     setLoading(true)
-    setError(null)
     try {
       const fresh = await loadDecision(runId)
-      if (!fresh) setError('That decision is no longer here. Choose another invoice from the list.')
+      if (showing.current !== runId) return
+      setError(fresh ? null : 'That decision is no longer here. Choose another invoice from the list.')
       setData(fresh)
     } catch (caught) {
+      if (showing.current !== runId) return
       setError(caught instanceof Error ? caught.message : 'This decision could not be loaded.')
     } finally {
-      setLoading(false)
+      if (showing.current === runId) setLoading(false)
     }
   }, [runId])
 
+  // A new selection empties the pane before it fetches. Leaving the previous
+  // invoice's verdict, reasons and order on screen under the new invoice's name is
+  // the one thing this pane must never do.
   useEffect(() => {
+    showing.current = runId
     setTab('decision')
     setSelectedField(null)
+    setData(null)
+    setError(null)
     void load()
-  }, [load])
+  }, [runId, load])
+
+  /**
+   * The explanation arrives after the verdict does.
+   *
+   * Stage 7 runs once the decision is already written, so a run opened the instant
+   * it completes carries the deterministic summary and the model's wording lands a
+   * few seconds later. Watching the row means that paragraph appears by itself
+   * rather than on the next time somebody happens to reload.
+   */
+  useEffect(() => {
+    if (!runId) return
+    const channel = supabase
+      .channel(`decision:${runId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'runs', filter: `id=eq.${runId}` }, () => {
+        void load()
+      })
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [runId, load])
 
   useEffect(() => {
     if (!handleRef) return
@@ -161,11 +210,20 @@ export function DecisionDetail({
     )
   }
 
+  // The header is part of the frame rather than part of the decision, so the pane
+  // keeps its shape while the contents are fetched.
   if (loading && !data) {
     return (
-      <Panel className="flex h-full items-center justify-center">
-        <Loading>Loading the decision</Loading>
-      </Panel>
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-5 py-3">
+          <Skeleton className="h-6 w-20 rounded-full" />
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-ground p-4">
+          <DecisionSkeleton />
+        </div>
+      </div>
     )
   }
 
@@ -185,6 +243,10 @@ export function DecisionDetail({
   const orderLines: OrderLine[] = Array.isArray(data.order?.line_items) ? (data.order.line_items as OrderLine[]) : []
   const selected = fields.find((field) => field.key === selectedField) ?? null
 
+  const approver = approverOf(data.run)
+  // Days since this vendor's account moved, when that was recent enough to matter.
+  const recentBankChange =
+    data.vendor && bankChangedRecently(data.vendor) ? daysSinceBankChange(data.vendor) : null
   const duplicateOf = duplicateFromStages(data.stages)
   const isDuplicate = data.codes.includes('EXACT_DUPLICATE')
   const failed = data.run.status === 'failed'
@@ -229,7 +291,7 @@ export function DecisionDetail({
                 onClick={() => setOverrideOpen(true)}
                 disabled={data.run.touched_by_human}
               >
-                {data.run.touched_by_human ? 'Approved by a person' : 'Override and approve'}
+                {approverOf(data.run) ? 'Approved by a person' : 'Override and approve'}
               </Button>
             </>
           )}
@@ -411,6 +473,40 @@ export function DecisionDetail({
               </Panel>
             </div>
 
+            {/* A vendor whose account moved recently, on an invoice being decided
+                now. Not a verdict and not a rule: a changed account is routine and
+                so is the fraud that imitates it, and the difference is something
+                only the person deciding can weigh. They can only weigh it if they
+                are told. */}
+            {recentBankChange !== null ? (
+              <Panel className={cn('border-l-4 px-5 py-4', tone('block').border)}>
+                <p className={cn('text-xs font-medium', tone('block').text)}>{BANK_CHANGED_RECENTLY_LABEL}</p>
+                <p className="mt-1 text-sm text-ink-soft">{bankChangedRecentlySentence(recentBankChange)}</p>
+                {data.vendor?.bank_confirmed_by ? (
+                  <p className="mt-2 text-xs text-muted">
+                    {BANK_CONFIRMED_LABEL}: {data.vendor.bank_confirmed_by}
+                    {data.vendor.bank_confirmed_at ? `, ${shortDate(data.vendor.bank_confirmed_at)}` : ''}
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-muted">{BANK_CONFIRMED_MISSING}</p>
+                )}
+              </Panel>
+            ) : null}
+
+            {/* A held invoice citing no order had nothing a person could do about
+                it, so an uploaded document could never reach approved. */}
+            {data.codes.includes('NO_PO_MATCH') ? (
+              <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
+                <p className="text-sm text-ink-soft">
+                  Nothing on file says this work was ordered. If it was, record the order and we will check this
+                  invoice against it again.
+                </p>
+                <Button asChild className="mt-3" size="sm">
+                  <Link to={`/orders/new?from=${data.run.id}`}>Raise an order</Link>
+                </Button>
+              </Panel>
+            ) : null}
+
             {data.codes.includes('UNKNOWN_VENDOR') ? (
               <Panel className={cn('border-l-4 px-5 py-4', classes.border)}>
                 <p className="text-sm text-ink-soft">
@@ -528,10 +624,22 @@ export function DecisionDetail({
                     </Link>
                   </li>
                 ) : null}
-                {data.run.touched_by_human ? (
+                {/* Only where somebody actually overrode the verdict, and only with
+                    the name they gave. An approval with no name against it is not
+                    an approval anyone can be asked about, and this line was
+                    appearing on invoices that were blocked and stayed blocked. */}
+                {approver ? (
                   <li className="flex items-baseline justify-between gap-4 py-2 text-sm">
                     <span className="text-ink-soft">Approved by</span>
-                    <span className="text-muted">{data.run.touched_by ?? 'A person'}</span>
+                    <span className="text-muted">{approver}</span>
+                  </li>
+                ) : null}
+                {data.run.discarded_at ? (
+                  <li className="flex items-baseline justify-between gap-4 py-2 text-sm">
+                    <span className="text-ink-soft">Filed away by</span>
+                    <span className="text-muted">
+                      {data.run.discarded_by ?? 'Not recorded'}, {dateAndTime(data.run.discarded_at)}
+                    </span>
                   </li>
                 ) : null}
               </ol>
@@ -571,6 +679,41 @@ export function DecisionDetail({
                     </div>
                   ))}
                 </dl>
+
+                {/* The out-of-band check on this vendor's account, which is what
+                    the bank-detail rule compares every invoice against. Collecting
+                    it and never showing it made it a box somebody filled in; shown
+                    here it is the evidence that the check actually happened. */}
+                {data.vendor ? (
+                  <div className="mt-4 border-t border-line-soft pt-3">
+                    <h3 className="text-xs text-muted">{BANK_CONFIRMED_LABEL}</h3>
+                    {data.vendor.bank_confirmed_by ? (
+                      <>
+                        <p className="mt-1 text-sm text-ink-soft">{data.vendor.bank_confirmed_by}</p>
+                        <p className="mt-0.5 text-xs text-muted tnum">
+                          {data.vendor.bank_confirmed_at
+                            ? `Confirmed ${dateAndTime(data.vendor.bank_confirmed_at)}`
+                            : 'No date was recorded against this confirmation.'}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-sm text-ink-soft">{BANK_CONFIRMED_MISSING}</p>
+                    )}
+                    <p className="mt-1 text-xs text-muted">
+                      Account on file: <span className="identifier">{data.vendor.bank_account ?? 'None'}</span>
+                      {data.vendor.bank_ifsc ? (
+                        <>
+                          , <span className="identifier">{data.vendor.bank_ifsc}</span>
+                        </>
+                      ) : null}
+                    </p>
+                    {data.vendor.bank_changed_at ? (
+                      <p className="mt-0.5 text-xs text-muted tnum">
+                        Last changed {dateAndTime(data.vendor.bank_changed_at)}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </Panel>
 
