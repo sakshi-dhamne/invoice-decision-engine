@@ -82,6 +82,7 @@ uniformity ceiling).
 | `/invoices` | Every invoice, filterable by outcome, vendor and date, with sortable columns |
 | `/orders` | Every purchase order, with what has been billed against it and what is left |
 | `/orders/:poNumber` | One order: its lines, and every invoice billed against it with each outcome |
+| `/orders/new` | Raising an order before any invoice exists. With `?from=:runId` it is the other flow: raising one for an invoice held because it cites none |
 | `/vendors` | The approved vendor list, with status and when each was added |
 | `/controls` | The thresholds, and the order the checks run in |
 | `/process` | The seven stages, the principle, and what each outcome means |

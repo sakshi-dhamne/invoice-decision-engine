@@ -13,12 +13,18 @@
 // On save the order is created and the invoice is checked again from the top. The
 // rules decide it exactly as they would any other invoice against any other order;
 // nothing here is a shortcut past them.
+//
+// Opened without an invoice, this is the other flow entirely: raising an order
+// before any invoice exists. Both live at the same address because they are the
+// same act, with and without a document in front of you, and one of them used to
+// answer with an error telling the reader to go and find an invoice first.
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
+import OrderCreate from './OrderCreate.tsx'
 import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner, UnfilledInput } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
@@ -48,6 +54,15 @@ function today(): string {
 export default function OrderNew() {
   const [params] = useSearchParams()
   const fromRunId = params.get('from') ?? ''
+
+  // No invoice in scope, so this is the standalone flow rather than a broken
+  // version of this one.
+  if (!fromRunId) return <OrderCreate />
+  return <OrderForInvoice runId={fromRunId} />
+}
+
+function OrderForInvoice({ runId }: { runId: string }) {
+  const fromRunId = runId
   const navigate = useNavigate()
 
   const [run, setRun] = useState<RunRow | null>(null)
@@ -62,11 +77,6 @@ export default function OrderNew() {
   const [submitting, setSubmitting] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!fromRunId) {
-      setError('This page needs to be opened from a held invoice, so it knows what the order is for.')
-      setLoaded(true)
-      return
-    }
     try {
       const fresh = await getRunById(fromRunId)
       if (!fresh?.invoice_id) {
@@ -151,7 +161,7 @@ export default function OrderNew() {
       <PageBody>
         <div className="space-y-6">
           <Link
-            to={fromRunId ? `/decisions/${fromRunId}` : '/'}
+            to={`/decisions/${fromRunId}`}
             className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
