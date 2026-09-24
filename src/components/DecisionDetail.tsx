@@ -15,6 +15,13 @@ import { dateAndTime, evidenceValue, fileNameOf, humanKey, money, shortDate } fr
 import {
   APPROVED_BY_PERSON_LABEL,
   approvedByPersonSentence,
+  comparedBySentence,
+  COUNTS_AGAINST_ORDER_LABEL,
+  NOT_COUNTING_LABEL,
+  ORDER_INVOICES_EMPTY,
+  ORDER_INVOICES_LABEL,
+  ORDER_OVERAGE_LABEL,
+  OTHERS_LIKE_THIS_LABEL,
   BANK_CHANGED_RECENTLY_LABEL,
   BANK_CONFIRMED_LABEL,
   BANK_CONFIRMED_MISSING,
@@ -27,6 +34,7 @@ import {
 } from '@/lib/reasonCopy.ts'
 import { bankChangedRecently, daysSinceBankChange } from '@/lib/vendorEdit.ts'
 import { approverOf, loadDecision, readFields, type DecisionData, type OrderLine } from '@/lib/decisionData.ts'
+import type { RelatedInvoice } from '@/lib/relatedInvoices.ts'
 import { discardRun, recordOverride, removeFailedRun } from '@/lib/queries.ts'
 import { runInvoice } from '@/lib/pipeline.ts'
 import { supabase } from '@/lib/supabase.ts'
@@ -60,6 +68,58 @@ export interface DecisionDetailHandle {
   // The primary action for whatever this is. Approving an exception, or filing a
   // duplicate away: the keyboard should not have to know which.
   act: () => void
+}
+
+/**
+ * Other invoices, laid out as rows a person can compare at a glance.
+ *
+ * Every column here is one of the things that separates a duplicate from an
+ * ordinary bill: when it was dated, what it was for, which order it cites, and
+ * what happened to it. `showGap` adds the two that only mean something against
+ * another invoice, the days between them and the difference in amount.
+ */
+function RelatedInvoiceList({ rows, showGap }: { rows: readonly RelatedInvoice[]; showGap: boolean }) {
+  return (
+    <ul className="mt-2 divide-y divide-line-soft">
+      {rows.map((row) => (
+        <li key={row.invoiceId} className="py-2 first:pt-1">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            {row.run ? <OutcomeChip run={row.run} size="sm" /> : null}
+            {row.runId ? (
+              <Link
+                to={`/decisions/${row.runId}`}
+                className="identifier text-sm text-ink underline underline-offset-4"
+              >
+                {row.invoiceNumber}
+              </Link>
+            ) : (
+              <span className="identifier text-sm text-ink">{row.invoiceNumber}</span>
+            )}
+            <span className="text-sm text-muted">{shortDate(row.invoiceDate)}</span>
+            <span className="ml-auto text-sm text-ink tnum">{money(row.total, row.currency)}</span>
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 text-xs text-muted">
+            <span className="identifier">{row.poNumber ?? 'No order'}</span>
+            {showGap && row.gapDays !== null ? (
+              <span className="tnum">
+                {row.gapDays === 0 ? 'Same day' : row.gapDays === 1 ? '1 day apart' : `${row.gapDays} days apart`}
+              </span>
+            ) : null}
+            {showGap && row.amountDifference !== null ? (
+              <span className="tnum">
+                {row.amountDifference === 0
+                  ? 'Same amount'
+                  : `${money(row.amountDifference, row.currency)} apart`}
+              </span>
+            ) : null}
+            <span className={row.countsAgainstTheOrder ? tone('approve').text : undefined}>
+              {row.countsAgainstTheOrder ? COUNTS_AGAINST_ORDER_LABEL : NOT_COUNTING_LABEL}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 export function DecisionDetail({
@@ -271,6 +331,7 @@ export function DecisionDetail({
 
   const toneName = verdictTone(data.run.verdict)
   const classes = tone(toneName)
+  const tally = data.orderTally
   const fields = readFields(data, { money: (value) => money(value), date: (value) => shortDate(value) })
   const orderLines: OrderLine[] = Array.isArray(data.order?.line_items) ? (data.order.line_items as OrderLine[]) : []
   const selected = fields.find((field) => field.key === selectedField) ?? null
@@ -437,10 +498,29 @@ export function DecisionDetail({
               </div>
             ) : null}
 
+            {/* Shown only when a check reached its answer by comparing this
+                invoice with others. Those others are the judgement. */}
+            {data.othersLikeThis.length > 0 ? (
+              <Panel>
+                <PanelHeading
+                  right={<span className="text-xs text-muted tnum">{data.othersLikeThis.length} shown</span>}
+                >
+                  {OTHERS_LIKE_THIS_LABEL}
+                </PanelHeading>
+                <div className="px-5 py-4">
+                  <p className="text-sm text-muted">{comparedBySentence(data.comparedBy)}</p>
+                  <RelatedInvoiceList rows={data.othersLikeThis} showGap />
+                </div>
+              </Panel>
+            ) : null}
+
             <div className="grid gap-4 xl:grid-cols-2">
               <div className="space-y-4">
                 <Panel>
-                  <PanelHeading>Why this outcome</PanelHeading>
+                  {/* What the checks found, which is not the same question as
+                      what happens to the invoice: a person may have approved it
+                      since. The chip and the banner above carry the outcome. */}
+                  <PanelHeading>What the checks found</PanelHeading>
                   <ul className="space-y-2 px-5 py-4">
                     {data.codes.map((code) => (
                       <li key={code} className="text-sm text-ink-soft">
@@ -483,17 +563,44 @@ export function DecisionDetail({
               </div>
 
               <Panel>
-                <PanelHeading>The order</PanelHeading>
+                <PanelHeading
+                  right={
+                    data.order ? (
+                      <Link
+                        to={`/orders/${encodeURIComponent(data.order.po_number)}`}
+                        className="text-xs text-muted underline underline-offset-4 transition-colors hover:text-ink"
+                      >
+                        Open the order
+                      </Link>
+                    ) : null
+                  }
+                >
+                  The order
+                </PanelHeading>
                 <div className="px-5 py-4">
-                  {data.order ? (
+                  {data.order && tally ? (
                     <>
+                      {/* The arithmetic, done. A reviewer should not have to take
+                          the order's value, subtract what is already committed
+                          against it and compare the remainder with this invoice
+                          in their head. */}
                       <LabelValueGrid
                         fields={[
                           { label: 'Order', value: data.order.po_number, mono: true },
-                          { label: 'Order value', value: money(data.order.total_amount, data.order.currency) },
-                          { label: 'Billed before this', value: money(data.order.amount_billed_to_date, data.order.currency) },
-                          { label: 'This invoice', value: money(data.invoice?.total ?? null, data.order.currency) },
+                          { label: 'Order value', value: money(tally.orderValue, tally.currency) },
+                          { label: 'Already billed', value: money(tally.billedBefore, tally.currency) },
+                          { label: 'This invoice', value: money(tally.thisInvoice, tally.currency) },
+                          ...(tally.overage !== null
+                            ? [
+                                {
+                                  label: ORDER_OVERAGE_LABEL,
+                                  value: money(tally.overage, tally.currency),
+                                  flagged: true,
+                                },
+                              ]
+                            : []),
                         ]}
+                        flagTone={toneName}
                       />
                       {orderLines.length > 0 ? (
                         <div className="mt-4 border-t border-line-soft pt-3">
@@ -508,6 +615,19 @@ export function DecisionDetail({
                           </ul>
                         </div>
                       ) : null}
+
+                      {/* Every other invoice on this order. For a set billed just
+                          under the limit one at a time, this is the whole pattern
+                          in one place, which is what nobody could see from inside
+                          any one of them. */}
+                      <div className="mt-4 border-t border-line-soft pt-3">
+                        <h3 className="text-xs text-muted">{ORDER_INVOICES_LABEL}</h3>
+                        {data.siblingsOnOrder.length === 0 ? (
+                          <p className="mt-2 text-sm text-muted">{ORDER_INVOICES_EMPTY}</p>
+                        ) : (
+                          <RelatedInvoiceList rows={data.siblingsOnOrder} showGap={false} />
+                        )}
+                      </div>
                     </>
                   ) : (
                     <p className="text-sm text-muted">

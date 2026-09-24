@@ -8,8 +8,31 @@
 // impossible to open.
 
 import { getIngestOutputs, getInvoices, getLatestRuns, getVendors } from './queries.ts'
+import {
+  approvedByPerson,
+  effectiveVerdict,
+  hasFailed,
+  latestRunPerInvoice,
+  NEEDS_A_PERSON,
+  needsAPerson,
+  wasDiscarded,
+} from './runState.ts'
+
 import { asRecord } from './decisionData.ts'
 import type { InvoiceRow, RunRow, StageLogRow, VendorRow, Verdict } from './database.types.ts'
+
+// Where a run stands is a question about the run alone, so it lives in
+// runState.ts, which depends on nothing. Re-exported here because this is the
+// module every list already reads.
+export {
+  approvedByPerson,
+  effectiveVerdict,
+  hasFailed,
+  latestRunPerInvoice,
+  NEEDS_A_PERSON,
+  needsAPerson,
+  wasDiscarded,
+}
 
 export interface DuplicateOf {
   invoiceNumber: string
@@ -31,34 +54,6 @@ export interface Feed {
   rows: FeedRow[]
   invoices: InvoiceRow[]
   vendors: VendorRow[]
-}
-
-/**
- * The most recent run of each invoice record.
- *
- * Keyed on the invoice record, not on the invoice number. An invoice re-run after
- * its vendor was onboarded has two runs, and the queue showed both: `INV-ZTR-0001`
- * appeared as Held and as Blocked at once, which is two answers to one question.
- * Only the latest is where the document stands now; the earlier ones are its
- * History.
- *
- * Two separate records that happen to share an invoice number each keep their own
- * latest run, and that is deliberate. An uploaded copy of a document is a
- * different record from the original, both are real, and collapsing them on the
- * number would hide the copy that was blocked behind the original that was not.
- *
- * Takes runs already ordered newest first, which is how the query returns them.
- */
-export function latestRunPerInvoice(runs: readonly RunRow[]): RunRow[] {
-  const seen = new Set<string>()
-  const latest: RunRow[] = []
-  for (const run of runs) {
-    const record = run.invoice_id ?? run.id
-    if (seen.has(record)) continue
-    seen.add(record)
-    latest.push(run)
-  }
-  return latest
 }
 
 /** The stable identity of a row. Short enough for a URL, long enough to be unique. */
@@ -145,60 +140,7 @@ export function wasUploaded(row: FeedRow): boolean {
   return Boolean(row.invoice?.storage_path)
 }
 
-export function hasFailed(run: RunRow): boolean {
-  return run.status === 'failed'
-}
-
-export function wasDiscarded(run: RunRow): boolean {
-  return run.discarded_at !== null
-}
-
 // The three verdicts that put a document in front of a person.
-export const NEEDS_A_PERSON: readonly Verdict[] = ['REVIEW', 'HOLD', 'BLOCK']
-
-/**
- * Whether a person has approved this invoice over the rules.
- *
- * Both halves are required, the same test the History tab uses: a flag with no
- * name against it names nobody, and an approval nobody will own is an approval
- * nobody made.
- */
-export function approvedByPerson(run: Pick<RunRow, 'touched_by_human' | 'touched_by'>): boolean {
-  return run.touched_by_human && (run.touched_by?.trim().length ?? 0) > 0
-}
-
-/**
- * The outcome, as opposed to the record.
- *
- * `runs.verdict` is what the rules decided and is never rewritten: it is the whole
- * point of the system that what was caught stays visible, including when it was
- * overruled. But once a person has approved an invoice, the invoice is approved,
- * and every screen that answers "where does this stand" has to say so. Recording
- * the approver and then leaving the invoice reading Held in the exceptions queue
- * was not a halfway position, it was the approval failing to do anything.
- *
- * So the record and the outcome are two questions, and this answers the second.
- * Who approved it is shown wherever the outcome is, so nobody reads it as the
- * rules having cleared something they did not.
- */
-export function effectiveVerdict(run: RunRow): Verdict | null {
-  return approvedByPerson(run) ? 'AUTO_APPROVE' : run.verdict
-}
-
-/**
- * Whether this row is an open exception.
- *
- * An exception is a decision that needs a person. Three things are not one: a run
- * that failed outright, because nothing was decided about it and nothing on the
- * queue's screen applies; a run somebody has already discarded; and a run a person
- * has already approved, because it has had the person it needed.
- */
-export function needsAPerson(run: RunRow): boolean {
-  if (wasDiscarded(run) || hasFailed(run) || approvedByPerson(run)) return false
-  const verdict = effectiveVerdict(run)
-  return run.status === 'complete' && verdict !== null && NEEDS_A_PERSON.includes(verdict)
-}
-
 // Counted on the outcome, so an invoice a person approved is counted as approved.
 export function countByVerdict(rows: FeedRow[]): Partial<Record<Verdict, number>> {
   const counts: Partial<Record<Verdict, number>> = {}

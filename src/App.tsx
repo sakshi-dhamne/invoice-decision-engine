@@ -7,7 +7,9 @@ import Decision from '@/pages/Decision'
 import Exceptions from '@/pages/Exceptions'
 import ExtractionHarness from '@/pages/ExtractionHarness'
 import NotFound from '@/pages/NotFound'
+import OrderDetail from '@/pages/OrderDetail'
 import OrderNew from '@/pages/OrderNew'
+import Orders from '@/pages/Orders'
 import Process from '@/pages/Process'
 import RunLive from '@/pages/RunLive'
 import Rules from '@/pages/Rules'
@@ -26,7 +28,10 @@ function App() {
         <Route path="/vendors" element={<Vendors />} />
         <Route path="/vendors/new" element={<VendorNew />} />
         <Route path="/vendors/:id/edit" element={<VendorEdit />} />
+        <Route path="/orders" element={<Orders />} />
+        {/* Declared before the order number so "new" is never read as one. */}
         <Route path="/orders/new" element={<OrderNew />} />
+        <Route path="/orders/:poNumber" element={<OrderDetail />} />
         <Route path="/controls" element={<Rules />} />
         <Route path="/invoices" element={<Dashboard />} />
         <Route path="/process" element={<Process />} />

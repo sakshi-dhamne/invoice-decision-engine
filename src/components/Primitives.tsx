@@ -336,7 +336,7 @@ export function DecisionSkeleton() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel>
-          <PanelHeading>Why this outcome</PanelHeading>
+          <PanelHeading>What the checks found</PanelHeading>
           <div className="space-y-2 px-5 py-4">
             <Skeleton className="h-4 w-11/12" />
             <Skeleton className="h-4 w-8/12" />

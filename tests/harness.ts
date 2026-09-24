@@ -6,6 +6,7 @@ import { decideInvoice } from '../src/rules/decide.ts'
 import type { EngineResult } from '../src/rules/decide.ts'
 import type { PriorRunHash } from '../src/rules/validate.ts'
 import type { PriorRun, ReasonCode, SubmissionRecord, VendorRecord, PurchaseOrderRecord, RuleSet } from '../src/rules/types.ts'
+import type { BilledDocument } from '../src/rules/billing.ts'
 import { corpusInReceiptOrder, ledger, purchaseOrders, rules, vendors, type CorpusDocument } from './fixtures.ts'
 
 // A fixed clock: a date-sensitive rule must not make the suite depend on when it
@@ -23,6 +24,9 @@ export interface CorpusRunOptions {
   rules?: RuleSet
   asOf?: Date
   documents?: readonly CorpusDocument[]
+  // What has been approved against each order so far, so a replay measures an
+  // invoice against what its order has left, exactly as the pipeline does.
+  billed?: readonly BilledDocument[]
   // What the engine has already been through. Passing the state a previous pass
   // left behind replays the corpus on top of it, the way the live pipeline does
   // when someone re-runs a document that has already been decided.
@@ -96,6 +100,7 @@ export function runCorpusPass(options: CorpusRunOptions = {}): {
       // document can never become a duplicate of itself.
       priorHashes: priorHashes.filter((entry) => entry.run_id !== runIdFor(document)),
       parentRun,
+      billed: options.billed,
     })
 
     results.set(document.id, { ...result, document })

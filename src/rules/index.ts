@@ -22,6 +22,7 @@
 export * from './types.ts'
 export * from './normalize.ts'
 export * from './vendor.ts'
+export * from './billing.ts'
 export * from './poMatch.ts'
 export * from './validate.ts'
 export * from './decide.ts'

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Building2, GitBranch, LayoutList, Moon, ScrollText, Sliders, Sun, Upload } from 'lucide-react'
+import { Building2, FileText, GitBranch, LayoutList, Moon, ScrollText, Sliders, Sun, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,7 @@ import { Spinner } from './Primitives.tsx'
 const NAV = [
   { to: '/', label: 'Exceptions', icon: LayoutList },
   { to: '/invoices', label: 'Invoices', icon: ScrollText },
+  { to: '/orders', label: 'Orders', icon: FileText },
   { to: '/vendors', label: 'Vendors', icon: Building2 },
   { to: '/controls', label: 'Controls', icon: Sliders },
   { to: '/process', label: 'Process', icon: GitBranch },
