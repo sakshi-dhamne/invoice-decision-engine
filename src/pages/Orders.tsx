@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronUp } from 'lucide-react'
+import { ChevronUp, Plus } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
 import {
@@ -21,9 +21,10 @@ import {
   Panel,
   PanelHeading,
 } from '@/components/Primitives.tsx'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { count, money, shortDate } from '@/lib/format.ts'
-import { ORDERS_EMPTY } from '@/lib/reasonCopy.ts'
+import { NEW_ORDER_LABEL, ORDERS_EMPTY } from '@/lib/reasonCopy.ts'
 import {
   loadOrders,
   matchesOrderSearch,
@@ -117,7 +118,7 @@ export default function Orders() {
                 What was authorised, what has been billed against it, and what is left.
               </p>
             </div>
-            <div>
+            <div className="flex items-center gap-3">
               <label htmlFor="orders-search" className="sr-only">
                 Search orders and vendors
               </label>
@@ -129,6 +130,15 @@ export default function Orders() {
                 placeholder="Search orders and vendors"
                 className="h-9 w-64 rounded-md border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted"
               />
+              {/* An order raised before any invoice exists, which is the ordinary
+                  way round. The other flow starts from an invoice that arrived
+                  without one. */}
+              <Button asChild className="gap-2">
+                <Link to="/orders/new">
+                  <Plus className="size-4" aria-hidden="true" />
+                  {NEW_ORDER_LABEL}
+                </Link>
+              </Button>
             </div>
           </div>
 

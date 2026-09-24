@@ -284,6 +284,25 @@ describe('purchase orders have a screen', () => {
     expect(detail).toContain('to={`/orders/${encodeURIComponent(data.order.po_number)}`}')
   })
 
+  it('can be raised before any invoice exists, from the list', () => {
+    const orders = readFileSync(join(repoRoot, 'src/pages/Orders.tsx'), 'utf8')
+    expect(orders).toContain('to="/orders/new"')
+    expect(orders).toContain('{NEW_ORDER_LABEL}')
+  })
+
+  it('sends the same address to the standalone form when no invoice is in scope', () => {
+    // The two flows are the same act, with and without a document in front of
+    // you. Opened without one, this used to answer with an error telling the
+    // reader to go and find an invoice first.
+    const page = readFileSync(join(repoRoot, 'src/pages/OrderNew.tsx'), 'utf8')
+    expect(page).toContain('if (!fromRunId) return <OrderCreate />')
+  })
+
+  it('offers only vendors an invoice could actually be paid against', () => {
+    const newOrder = readFileSync(join(repoRoot, 'src/lib/newOrder.ts'), 'utf8')
+    expect(newOrder).toContain("vendor.status === 'active'")
+  })
+
   it('reads what an order has been billed from the invoices, not from the row', () => {
     // The column is an opening balance and nothing writes to it, so a screen that
     // reads it alone reports zero however much has been approved.

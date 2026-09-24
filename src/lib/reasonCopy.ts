@@ -319,6 +319,24 @@ export const ORDER_OVERAGE_LABEL = 'Over the order by'
 export const ORDERS_EMPTY = 'No order matches these filters. Widen them, or clear the search.'
 export const ORDER_NOT_FOUND = 'There is no order by that number. It may have been raised under another.'
 
+/**
+ * Raising an order with no invoice in front of you.
+ *
+ * The counterpart to raising one from a held invoice, and the ordinary way round:
+ * the order is recorded when the work is agreed, and the invoice turns up against
+ * it later. None of the "do not take this off the invoice" warnings belong on this
+ * screen, because there is no invoice here to take anything off. Every field is
+ * typed by the person raising the order.
+ */
+export const NEW_ORDER_LABEL = 'New order'
+export const NEW_ORDER_TITLE = 'Raise a new order'
+export const NEW_ORDER_INTRO =
+  'Record what has been agreed with a vendor. Invoices that arrive against this order are checked on what you enter here.'
+export const NEW_ORDER_VENDOR_EMPTY = 'No active vendor matches that. Clear the search, or add the vendor first.'
+export const NEW_ORDER_NUMBER_NOTE = 'The next number after this vendor\'s existing orders. Change it if yours are numbered differently.'
+export const NEW_ORDER_SUBMIT = 'Raise the order'
+export const NEW_ORDER_INCOMPLETE = 'Choose a vendor and fill in the order number, description, value and date.'
+
 // ---------------------------------------------------------------------------
 // Vendors
 // ---------------------------------------------------------------------------
