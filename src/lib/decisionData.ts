@@ -5,16 +5,19 @@
 // stage logs hold what they decided it on. This reads and shapes.
 
 import { getInvoiceById, getPurchaseOrders, getRunById, getStageLogs } from './queries.ts'
+import { asRecord } from './format.ts'
 import { pdfUrlFor } from './pipeline.ts'
 import { loadVendorMaster, resolveVendorForDocument } from './vendorLookup.ts'
+import { comparedInvoices, invoicesOnOrder, loadLedger, namedInvoices, type RelatedInvoice } from './relatedInvoices.ts'
+import { orderTallyFrom, type OrderTally } from './orders.ts'
 import { REASON_CODE_FIELDS } from '@/rules/validate.ts'
 import type { FieldChange } from '@/rules/validate.ts'
 import type { ReasonCode } from '@/rules/types.ts'
 import type { InvoiceRow, PurchaseOrderRow, RunRow, StageLogRow, VendorRow } from './database.types.ts'
 
-export function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
-}
+// Defined in format.ts, which depends on nothing, and re-exported here because
+// this is where every screen already reaches for it.
+export { asRecord }
 
 /**
  * Who overrode this verdict, if anybody did.
@@ -109,6 +112,18 @@ export interface DecisionData {
   // not the same question: somebody may have added the vendor since.
   vendorUnknownNow: boolean
   order: PurchaseOrderRow | null
+  // The order's value, what it had been billed before this invoice, what this one
+  // adds and whether that goes over. Read off the decision rather than off the
+  // order row, so the figures are the ones this invoice was measured against.
+  orderTally: OrderTally | null
+  // Every other invoice billed against the same order. A reviewer looking at one
+  // invoice of a set can see the set.
+  siblingsOnOrder: RelatedInvoice[]
+  // The invoices a cross-invoice check compared this one against: what the
+  // near-duplicate check matched, or the run of invoices the split check found.
+  othersLikeThis: RelatedInvoice[]
+  // Which check produced them, so the panel can say what it is showing.
+  comparedBy: 'near_duplicate' | 'threshold_split' | null
   stages: StageLogRow[]
   extraction: Record<string, unknown> | null
   validations: Record<string, unknown> | null
@@ -127,11 +142,12 @@ export async function loadDecision(runId: string): Promise<DecisionData | null> 
   const run = await getRunById(runId)
   if (!run) return null
 
-  const [stages, orders, master, invoice] = await Promise.all([
+  const [stages, orders, master, invoice, ledger] = await Promise.all([
     getStageLogs(runId),
     getPurchaseOrders(),
     loadVendorMaster(),
     run.invoice_id ? getInvoiceById(run.invoice_id) : Promise.resolve(null),
+    loadLedger(),
   ])
 
   const extraction = asRecord(stages.find((stage) => stage.stage === 'extract')?.output)
@@ -182,6 +198,25 @@ export async function loadDecision(runId: string): Promise<DecisionData | null> 
   const fileReplacedOnly =
     Array.isArray(allChanges) && allChanges.length > 0 && businessChanges.length === 0
 
+  const order = orders.find((entry) => entry.po_number === run.matched_po) ?? null
+
+  // What this decision was comparing against, for the gap in days and the
+  // difference in amount the panels put beside each row.
+  const subject = {
+    invoiceId: invoice?.id ?? null,
+    invoiceDate: invoice?.invoice_date ?? null,
+    total: invoice?.total ?? null,
+  }
+
+  // A check that reached its conclusion by looking at other invoices has to show
+  // them. The near-duplicate check names what it matched; the split check names
+  // the run it found. Neither is shown when it passed.
+  const nearDuplicates = comparedInvoices(validations, 'near_duplicate', 'matches')
+  const splitPattern = comparedInvoices(validations, 'threshold_split', 'invoices')
+  const compared = nearDuplicates.length > 0 ? nearDuplicates : splitPattern
+  const comparedBy: DecisionData['comparedBy'] =
+    nearDuplicates.length > 0 ? 'near_duplicate' : splitPattern.length > 0 ? 'threshold_split' : null
+
   const documentUrl = invoice ? pdfUrlFor(invoice) : null
   const documentIsImage = Boolean(invoice?.storage_path && /\.(png|jpe?g|webp|heic)$/i.test(invoice.storage_path))
 
@@ -190,7 +225,11 @@ export async function loadDecision(runId: string): Promise<DecisionData | null> 
     invoice,
     vendor: resolved.vendor,
     vendorUnknownNow: resolved.vendor === null,
-    order: orders.find((entry) => entry.po_number === run.matched_po) ?? null,
+    order,
+    orderTally: orderTallyFrom({ validations, order, invoiceTotal: invoice?.total ?? null }),
+    siblingsOnOrder: invoicesOnOrder(run.matched_po, ledger, subject),
+    othersLikeThis: namedInvoices(compared, ledger, subject),
+    comparedBy,
     stages,
     extraction,
     validations,

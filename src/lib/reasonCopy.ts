@@ -91,9 +91,23 @@ export const FAILED_RUN_SENTENCE = 'The file could not be read.'
  */
 export const APPROVED_BY_PERSON_LABEL = 'Approved by a person'
 
+/**
+ * What the checks had done, as a clause that can follow "before that".
+ *
+ * The verdict labels are chips and do not decline into a sentence: "the checks
+ * had review it" is what reading one out as a verb produced.
+ */
+const RULES_OUTCOME_CLAUSE: Readonly<Record<Verdict, string>> = {
+  AUTO_APPROVE: 'the checks had approved it too',
+  REVIEW: 'the checks had sent it for review',
+  HOLD: 'the checks had held it',
+  BLOCK: 'the checks had blocked it',
+  ROUTED_NOT_PAID: 'the checks had recorded it rather than paying it',
+}
+
 export function approvedByPersonSentence(who: string, when: string, rulesVerdict: Verdict | null): string {
-  const outcome = rulesVerdict ? VERDICT_LABEL[rulesVerdict].toLowerCase() : 'stopped'
-  return `${who} approved this on ${when}. The checks had ${outcome} it, and that is still what they found.`
+  const clause = rulesVerdict ? RULES_OUTCOME_CLAUSE[rulesVerdict] : 'the checks had stopped it'
+  return `${who} approved this on ${when}. Before that, ${clause}, and what they found is unchanged below.`
 }
 
 /** What a duplicate says about the invoice it repeats. */
@@ -175,6 +189,54 @@ export function checkLabel(key: string): string {
   return CHECK_LABEL[key] ?? key.replace(/_/g, ' ')
 }
 
+/**
+ * What each stage looks at, for the page that explains the process.
+ *
+ * The arrows between the stages on that page looked like controls and were not.
+ * A stage that opens is the version of that control worth having: somebody who
+ * has been handed a link and no explanation can see what a stage actually does
+ * without reading the source.
+ *
+ * The checks stage lists the checks themselves, taken from the table above rather
+ * than written out again, so a check added to the engine appears here the day it
+ * is added.
+ */
+export const STAGE_CHECKS: Readonly<Record<string, readonly string[]>> = {
+  ingest: [
+    'whether the document is where the record says it is',
+    'its fingerprint, so a second copy of the same file is recognised without reading it again',
+    'whether that exact file has arrived before',
+  ],
+  extract: [
+    'what the page states, copied out field by field',
+    'which fields the page does not print at all, which is an absence rather than a failure',
+  ],
+  resolve_vendor: [
+    'the printed company name against the approved vendor list',
+    'the same name against each vendor\'s known aliases',
+    'how close the best match is, and whether anything else is nearly as close',
+  ],
+  match_po: [
+    'the order number printed on the invoice, when there is one',
+    'the amount against each of this vendor\'s open orders',
+    'the line wording and the date, when no order number is printed',
+    'whether two orders fit equally well, in which case neither is picked',
+  ],
+  validate: Object.values(CHECK_LABEL),
+  decide: [
+    'the checks in a fixed order, with the first objection setting the outcome',
+    'every other objection, carried alongside it so nothing is hidden by the first',
+  ],
+  explain: [
+    'what the checks found, written up in a sentence or two',
+    'nothing that could change the outcome, which is already settled before this runs',
+  ],
+}
+
+export function stageChecks(stage: string): readonly string[] {
+  return STAGE_CHECKS[stage] ?? []
+}
+
 // Small counts read better as words in a sentence. Beyond this a numeral is
 // clearer than a word, and a run with ten objections is not a sentence anybody is
 // reading for its prose.
@@ -217,6 +279,45 @@ export function checksThatObjected(report: Readonly<Record<string, unknown>>): s
     .filter(([, value]) => value !== null && typeof value === 'object' && 'passed' in value && !(value as { passed: unknown }).passed)
     .map(([name]) => name)
 }
+
+// ---------------------------------------------------------------------------
+// The other invoices a decision is about
+// ---------------------------------------------------------------------------
+
+/**
+ * Three checks reach their answer by comparing this invoice with other invoices.
+ * Each of them used to report a finding and show none of what it found, which
+ * leaves the reader holding the judgement and none of the evidence: whether a
+ * near-duplicate is a resubmission or a monthly bill is not something the rules
+ * can settle, and not something a person can settle without seeing both.
+ */
+export const OTHERS_LIKE_THIS_LABEL = 'Others like this'
+
+export const COMPARED_BY_SENTENCE: Readonly<Record<string, string>> = {
+  near_duplicate:
+    'These came from this vendor close to this invoice in both date and amount. A resubmission repeats a bill that has already been sent; recurring work produces one like it every month.',
+  threshold_split:
+    'These bill against the same order within a short span, each one just under the limit for approving without a person.',
+}
+
+export function comparedBySentence(check: string | null): string {
+  return check ? (COMPARED_BY_SENTENCE[check] ?? '') : ''
+}
+
+// The invoices on one order, on the decision and on the order itself.
+export const ORDER_INVOICES_LABEL = 'Invoices against this order'
+export const ORDER_INVOICES_EMPTY = 'Nothing else has been billed against this order.'
+
+/** Marks an invoice whose value is committed, so the balance already reflects it. */
+export const COUNTS_AGAINST_ORDER_LABEL = 'Counting against the balance'
+export const NOT_COUNTING_LABEL = 'Not counted yet'
+
+/** How far past the order this invoice would take it. */
+export const ORDER_OVERAGE_LABEL = 'Over the order by'
+
+// The order list, and one order.
+export const ORDERS_EMPTY = 'No order matches these filters. Widen them, or clear the search.'
+export const ORDER_NOT_FOUND = 'There is no order by that number. It may have been raised under another.'
 
 // ---------------------------------------------------------------------------
 // Vendors

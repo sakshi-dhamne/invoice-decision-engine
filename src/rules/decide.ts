@@ -8,6 +8,8 @@
 // Every threshold is read from the `rules` table at runtime. Nothing here is
 // tuned to any particular invoice, vendor or purchase order.
 
+import { billMatchedOrder } from './billing.ts'
+import type { BilledDocument } from './billing.ts'
 import { isFiniteNumber, roundTo } from './normalize.ts'
 import { matchPurchaseOrder } from './poMatch.ts'
 import type { PoMatchResult } from './poMatch.ts'
@@ -325,6 +327,10 @@ export interface EngineInput {
   submissions?: readonly SubmissionRecord[]
   priorHashes?: readonly PriorRunHash[]
   parentRun?: PriorRun | null
+  // What every decided document bills and whether it is approved, so the matched
+  // order is measured on what it has left rather than on its opening balance.
+  // The document being decided is left out of its own ledger by `submissionId`.
+  billed?: readonly BilledDocument[]
 }
 
 export interface EngineResult {
@@ -345,7 +351,11 @@ export function decideInvoice(input: EngineInput): EngineResult {
   const vendorPos = vendorMatch.vendor
     ? input.purchaseOrders.filter((po) => po.vendor_id === vendorMatch.vendor?.id)
     : []
-  const poMatch = matchPurchaseOrder(input.facts, vendorPos, input.rules)
+  const poMatch = billMatchedOrder(
+    matchPurchaseOrder(input.facts, vendorPos, input.rules),
+    input.billed ?? [],
+    input.submissionId ?? null,
+  )
 
   const checks = runValidations({
     facts: input.facts,

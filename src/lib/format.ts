@@ -1,5 +1,16 @@
 // Presentation helpers. Nothing here decides anything.
 
+/**
+ * A JSON value narrowed to an object, or null.
+ *
+ * Stage logs and rules evidence arrive as `Json`, and every screen that reads one
+ * starts by asking this. It sits here because it is the one thing all of them
+ * share and it depends on nothing.
+ */
+export function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
 const INR = new Intl.NumberFormat('en-IN', {
   style: 'currency',
   currency: 'INR',

@@ -33,6 +33,8 @@ import type { InvoiceRow, Json, PurchaseOrderRow, RunRow, StageLogStatus, Vendor
 import { decide } from '@/rules/decide.ts'
 import { matchPurchaseOrder } from '@/rules/poMatch.ts'
 import { resolveVendor } from '@/rules/vendor.ts'
+import { billMatchedOrder } from '@/rules/billing.ts'
+import type { BilledDocument } from '@/rules/billing.ts'
 import { findExactDuplicate, runValidations } from '@/rules/validate.ts'
 import type { PriorRunHash, ValidationReport } from '@/rules/validate.ts'
 import { toRuleSet } from '@/rules/types.ts'
@@ -52,6 +54,7 @@ import type {
 import { fallbackExplanation } from '@/rules/explain.ts'
 import { modelLabel } from './format.ts'
 import { checksThatObjected, objectionSentence, reasonSentence } from './reasonCopy.ts'
+import { isApproved, latestRunPerInvoice } from './runState.ts'
 import type { ExplainDecisionRequest, ExplainDecisionResponse } from '@/rules/explain.ts'
 
 // ---------------------------------------------------------------------------
@@ -319,16 +322,62 @@ export function selectPriorHashes(
   return priorHashes
 }
 
-export async function loadPriorHashes(context: PipelineContext, invoice: InvoiceRow): Promise<PriorRunHash[]> {
-  return selectPriorHashes(invoice, context.invoices, await getCompletedRuns())
+/**
+ * Every run that has reached an answer, with the subset this document could be a
+ * duplicate of already picked out.
+ *
+ * Fetched once per run and passed on to everything that needs it: the duplicate
+ * check, the resubmission lineage, and the billing ledger below. Fetched here
+ * rather than held on the shared context because all three have to see a run that
+ * completed a moment ago, including one from earlier in the same batch.
+ */
+export interface DecidedRuns {
+  runs: RunRow[]
+  priorHashes: PriorRunHash[]
+}
+
+export async function loadDecidedRuns(context: PipelineContext, invoice: InvoiceRow): Promise<DecidedRuns> {
+  const runs = await getCompletedRuns()
+  return { runs, priorHashes: selectPriorHashes(invoice, context.invoices, runs) }
+}
+
+/**
+ * What each document bills, and whether it is approved, for the billing ledger.
+ *
+ * The latest run of a document is where it stands; the ones before it are its
+ * history. "Approved" is the outcome rather than the record, so an invoice a
+ * person passed counts exactly as one the rules cleared, and one a person filed
+ * away counts as neither.
+ *
+ * The order a document bills against is the order its run matched, not the one
+ * printed on the page. An invoice that cites an order we could not match was
+ * never checked against it, so it cannot have committed any of its value.
+ */
+export function billedDocuments(invoices: readonly InvoiceRow[], runs: readonly RunRow[]): BilledDocument[] {
+  const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]))
+  // The query returns oldest first; the latest-run rule reads newest first.
+  const latest = latestRunPerInvoice([...runs].reverse())
+
+  return latest.flatMap((run): BilledDocument[] => {
+    const invoice = run.invoice_id ? byId.get(run.invoice_id) : undefined
+    if (!invoice) return []
+    return [
+      {
+        invoice_id: invoice.id,
+        po_number: run.matched_po,
+        amount: invoice.total,
+        approved: isApproved(run),
+      },
+    ]
+  })
 }
 
 async function loadParentRun(
   context: PipelineContext,
   invoice: InvoiceRow,
   vendorId: string | null,
+  runs: readonly RunRow[],
 ): Promise<PriorRun | null> {
-  const runs = await getCompletedRuns()
   const byId = new Map(context.invoices.map((row) => [row.id, row]))
 
   // The most recent prior run of this invoice number for this vendor.
@@ -650,10 +699,10 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
     const ingested = await runStage('ingest', { invoice_id: invoice.id, file_path: invoice.file_path }, async () => {
       const pdfUrl = pdfUrlFor(invoice)
       const { hash: fileHash, document } = await ensureFileHash(invoice, pdfUrl)
-      const priorHashes = await loadPriorHashes(context, invoice)
-      const duplicateOf = findExactDuplicate(fileHash, priorHashes)
+      const decided = await loadDecidedRuns(context, invoice)
+      const duplicateOf = findExactDuplicate(fileHash, decided.priorHashes)
       return {
-        value: { pdfUrl, fileHash, document, priorHashes, duplicateOf },
+        value: { pdfUrl, fileHash, document, decided, duplicateOf },
         output: {
           pdf_url: pdfUrl,
           file_hash: fileHash,
@@ -755,8 +804,8 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
       }
     })
 
-    const parentRun = await loadParentRun(context, invoice, vendorMatch.vendor?.id ?? null)
-    const priorHashes = ingested.priorHashes
+    const parentRun = await loadParentRun(context, invoice, vendorMatch.vendor?.id ?? null, ingested.decided.runs)
+    const priorHashes = ingested.decided.priorHashes
 
     // Stage 4 — match PO.
     const vendorPos = vendorMatch.vendor
@@ -791,12 +840,36 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
       },
     )
 
+    /**
+     * What the matched order has already been billed.
+     *
+     * The order row carries only an opening balance; nothing writes to it. Every
+     * invoice approved against the order since, by the rules or by a person, is
+     * added here, so this invoice is measured against what the order has left
+     * rather than against its full value. Without it several invoices could each
+     * pass on their own and overdraw one order between them, which is the failure
+     * the cumulative check exists to prevent. This document is left out of its own
+     * ledger, so re-running an approved invoice does not measure it against
+     * itself.
+     *
+     * Applied after the match and not before it, deliberately. Which order an
+     * invoice belongs to is a question about the document; what the order has
+     * left is a question about money. An order that has been billed to its value
+     * is still the order an invoice cites, and an invoice that would overdraw one
+     * should be matched to it and then reported as an overage, which is the
+     * finding a reviewer needs. Scoring candidates on the remaining balance
+     * instead would quietly stop matching such an invoice at all, and it would be
+     * held for citing no order while the real finding went unsaid.
+     */
+    const ledger = billedDocuments(context.invoices, ingested.decided.runs)
+    const billedMatch = billMatchedOrder(poMatch, ledger, invoice.id)
+
     // Stage 5 — validate.
     const checks = await runStage('validate', { po_number: poMatch.matched?.po_number ?? null } as Json, () => {
       const report = runValidations({
         facts,
         vendorMatch,
-        poMatch,
+        poMatch: billedMatch,
         rules: context.rules,
         asOf,
         submissionId: invoice.id,
@@ -817,7 +890,7 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
 
     // Stage 6 — decide.
     const decision = await runStage('decide', { reason_codes_in: [] } as Json, () => {
-      const result = decide({ facts, vendorMatch, poMatch, checks, rules: context.rules })
+      const result = decide({ facts, vendorMatch, poMatch: billedMatch, checks, rules: context.rules })
       return {
         value: result,
         output: {

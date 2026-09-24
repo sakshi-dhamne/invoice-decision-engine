@@ -8,14 +8,25 @@
 
 import type { Evidence, ReasonCode, Verdict } from './types.ts'
 
+/**
+ * What the model is asked for, and what it is asked not to do.
+ *
+ * Rule 2 is the one that matters most and is the newest. The explanation says
+ * what the checks found; it never says what happens to the invoice. A person can
+ * approve an invoice the checks stopped, and when they do, the outcome changes
+ * and this paragraph does not. An explanation that had asserted an outcome then
+ * sits under a verdict that contradicts it, which is how an approved invoice came
+ * to be described as being under review. The verdict chip and the override banner
+ * carry the outcome; this carries the findings, which stay true either way.
+ */
 export const EXPLAIN_PROMPT = [
-  'Tell a finance manager what is going on with this invoice, in under 60 words.',
+  'Tell a finance manager what the checks found on this invoice, in under 60 words.',
   '',
-  'Write to the reader, about the document. Say what is wrong and what that means for them.',
+  'Write to the reader, about the document. Say what is wrong with it.',
   '',
   'Rules:',
   '1. Never name the system, the software, or "accounts payable" as the actor. Nothing "was decided by" anything. The invoice, the vendor and the order are the subjects of your sentences.',
-  '2. Do not open by restating the verdict. The reader can already see it. Open with the thing that is actually wrong.',
+  '2. Never say what happens to the invoice. Do not write that it is approved, held, blocked, under review, rejected, paid, or that it needs anyone. The reader is shown the outcome elsewhere, and a person may have changed it since. Describe only what was found.',
   '3. Plain sentences. Name the specific amounts, vendors and order numbers involved, and use them rather than describing them in the abstract.',
   '4. Describe what was observed. Never guess at why anyone did anything, and never suggest fraud.',
   '5. No advice, no next steps, no closing summary. Stop when you have said what is true.',
@@ -62,16 +73,6 @@ export interface ExplainDecisionFailure {
 
 export type ExplainDecisionResponse = ExplainDecisionSuccess | ExplainDecisionFailure
 
-// How the fallback sentence ends. Written as something that happened to this
-// document rather than as an action a department took.
-export const VERDICT_LABELS: Readonly<Record<Verdict, string>> = {
-  AUTO_APPROVE: 'cleared every check and needs nobody',
-  REVIEW: 'needs somebody to look at it',
-  HOLD: 'is on hold until something is resolved',
-  BLOCK: 'will not be paid',
-  ROUTED_NOT_PAID: 'is filed rather than paid',
-}
-
 export const REASON_CODE_LABELS: Readonly<Record<ReasonCode, string>> = {
   CREDIT_NOTE: 'the document is a credit note, so it is recorded rather than paid',
   EXACT_DUPLICATE: 'the same document has already been processed',
@@ -112,7 +113,11 @@ function formatAmount(total: number | null | undefined, currency: string | null 
 
 /**
  * The deterministic explanation. Used whenever the model call fails, is switched
- * off, or would be a waste of a request — a run must never depend on it.
+ * off, or would be a waste of a request. A run must never depend on it.
+ *
+ * It names the document and says what the checks found, and stops there. It used
+ * to end on the verdict, which read correctly until somebody approved the invoice
+ * and left the paragraph describing an outcome that was no longer the outcome.
  */
 export function fallbackExplanation(request: ExplainDecisionRequest): string {
   const { summary } = request
@@ -126,8 +131,7 @@ export function fallbackExplanation(request: ExplainDecisionRequest): string {
     .map((code) => REASON_CODE_LABELS[code as ReasonCode])
     .filter((label): label is string => Boolean(label))
 
-  const verdictClause = VERDICT_LABELS[request.verdict] ?? request.verdict
-  const head = `${subject}${vendor}${amountClause}${poClause} ${verdictClause}.`
+  const head = `${subject}${vendor}${amountClause}${poClause}.`
 
   if (reasons.length === 0) return head
   const why =
@@ -144,10 +148,12 @@ export function buildExplainUserMessage(request: ExplainDecisionRequest): string
   return [
     EXPLAIN_PROMPT,
     '',
-    'Decision (already final — describe it, do not re-evaluate it):',
+    'What the checks found. These are settled: describe them, do not re-evaluate them, and do not say what happens to the invoice.',
     JSON.stringify(
       {
-        verdict: request.verdict,
+        // The verdict is deliberately not sent. The paragraph describes what was
+        // found, and a model that has been told the outcome will reach for it
+        // however firmly it is asked not to.
         reason_codes: request.reason_codes,
         document: request.summary ?? {},
         evidence: request.evidence,

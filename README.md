@@ -46,6 +46,26 @@ Two places the logic is deliberately fitted to the domain, both documented in co
   tax-basis normalisation of line items instead. The rate is derived from the
   invoice's own subtotal/total rather than assumed.
 
+## What an order has been billed
+
+`purchase_orders.amount_billed_to_date` is an opening balance: what had been
+billed before any of this was recorded here. Nothing writes to it. What has been
+billed since is derived from the invoices themselves, in `src/rules/billing.ts`:
+every invoice whose current outcome is approved, by the rules or by a person,
+counts against the order its run matched.
+
+Deriving it rather than accumulating it is what makes the awkward half correct
+without being maintained. An invoice approved today and held tomorrow stops
+counting the moment it stops being approved, and so does one somebody files away,
+because nothing was ever added to a running total that would have to be taken back
+out.
+
+It is applied to the order stage 4 settled on, never to the candidates stage 4 was
+choosing between. Which order an invoice belongs to is a question about the
+document; what that order has left is a question about money. An invoice that
+would overdraw its order is matched to it and then reported as an overage, rather
+than quietly matching nothing and being held for citing no order.
+
 ## Thresholds
 
 Every operational number is a row in the `rules` table, read at runtime; a missing
@@ -60,6 +80,8 @@ uniformity ceiling).
 |---|---|
 | `/` | Exceptions. The list on the left, the selected invoice on the right. Choosing a row changes the pane, not the route; the selection lives in `?invoice=…&run=…`, keyed on the run because invoice numbers repeat. `j` and `k` move, `Enter` opens the document, `a` acts, `Esc` clears |
 | `/invoices` | Every invoice, filterable by outcome, vendor and date, with sortable columns |
+| `/orders` | Every purchase order, with what has been billed against it and what is left |
+| `/orders/:poNumber` | One order: its lines, and every invoice billed against it with each outcome |
 | `/vendors` | The approved vendor list, with status and when each was added |
 | `/controls` | The thresholds, and the order the checks run in |
 | `/process` | The seven stages, the principle, and what each outcome means |
@@ -69,6 +91,17 @@ uniformity ceiling).
 | `/harness` | The development harness. Not part of the product, and unchanged |
 
 `/rules` and `/dashboard` still resolve, so older links land somewhere.
+
+A check that reaches its conclusion by comparing this invoice with others shows
+those invoices. The near-duplicate and split checks list what they matched, with
+the gap in days and the difference in amount, under "Others like this"; the order
+panel lists every other invoice billed against the same order and marks the ones
+already counting against the balance.
+
+The explanation says what the checks found and never what happens to the invoice.
+A person can approve an invoice the checks stopped, and when they do the outcome
+changes while the paragraph does not; the verdict chip and the override banner
+carry the outcome.
 
 The detail pane has three tabs. **Decision** is the verdict, the disputed figures
 side by side, and why. **Document** renders the page itself with `pdfjs-dist`,

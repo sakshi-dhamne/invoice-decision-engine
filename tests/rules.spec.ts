@@ -825,12 +825,18 @@ describe('stage 7 fallback', () => {
       },
     })
     expect(text).toContain('INV-ACM-5521')
-    expect(text).toContain('will not be paid')
     expect(text).toContain('bank account')
 
-    // Written to the reader, about the document. The system is never the subject,
-    // and the sentence opens with what is wrong rather than with the verdict.
+    // Written to the reader, about the document. The system is never the subject.
     expect(text.toLowerCase()).not.toContain('accounts payable')
     expect(text.split(/\s+/).length).toBeLessThan(60)
+
+    // And it says what was found without saying what happens to the invoice. A
+    // person can approve an invoice the checks blocked; the outcome then changes
+    // and this paragraph does not, so a paragraph that asserted one would be
+    // sitting under a verdict contradicting it.
+    for (const outcomeWord of ['will not be paid', 'on hold', 'needs somebody', 'approved', 'blocked', 'under review']) {
+      expect(text.toLowerCase(), outcomeWord).not.toContain(outcomeWord)
+    }
   })
 })

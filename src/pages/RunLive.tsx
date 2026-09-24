@@ -25,7 +25,8 @@ import {
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { duration, money, shortDate } from '@/lib/format.ts'
+import { asRecord, duration, money, shortDate } from '@/lib/format.ts'
+import { orderTallyFrom } from '@/lib/orders.ts'
 import { stageLabel, verdictTone } from '@/lib/reasonCopy.ts'
 import { PIPELINE_STAGES } from '@/lib/pipeline.ts'
 import { getInvoiceById, getPurchaseOrders, getRunById, getStageLogs } from '@/lib/queries.ts'
@@ -192,11 +193,19 @@ export default function RunLive() {
   }, [extractLog])
 
   const matchedOrder = orders.find((order) => order.po_number === run?.matched_po) ?? null
+  // What the order had been billed when this run measured it, which is the
+  // opening balance plus every invoice approved against it by then. The order row
+  // carries only the opening balance.
+  const tally = orderTallyFrom({
+    validations: asRecord(logs.find((log) => log.stage === 'validate')?.output),
+    order: matchedOrder,
+    invoiceTotal: invoice?.total ?? null,
+  })
   const orderFields: Field[] = matchedOrder
     ? [
         { label: 'Order', value: matchedOrder.po_number, mono: true },
-        { label: 'Order value', value: money(matchedOrder.total_amount, matchedOrder.currency) },
-        { label: 'Billed so far', value: money(matchedOrder.amount_billed_to_date, matchedOrder.currency) },
+        { label: 'Order value', value: money(tally?.orderValue ?? matchedOrder.total_amount, matchedOrder.currency) },
+        { label: 'Billed so far', value: money(tally?.billedBefore ?? matchedOrder.amount_billed_to_date, matchedOrder.currency) },
         { label: 'Issued', value: shortDate(matchedOrder.issued_date) },
         { label: 'Status', value: matchedOrder.status === 'open' ? 'Open' : 'Closed' },
         { label: 'Figures include tax', value: matchedOrder.tax_treatment === 'inclusive' ? 'Yes' : 'No' },

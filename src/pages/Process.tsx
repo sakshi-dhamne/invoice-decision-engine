@@ -4,15 +4,16 @@
 // stages, the one thing worth understanding about how they are arranged, and what
 // each of the four outcomes means.
 
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
 import { PageBody, Panel, PanelHeading, VerdictChip } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { cn } from '@/lib/utils'
 import { PIPELINE_STAGES } from '@/lib/pipeline.ts'
-import { stageLabel, VERDICT_EXPLANATION, verdictTone } from '@/lib/reasonCopy.ts'
+import { stageChecks, stageLabel, VERDICT_EXPLANATION, verdictTone } from '@/lib/reasonCopy.ts'
 import type { Verdict } from '@/lib/database.types.ts'
 
 const WHAT_EACH_STAGE_DOES: Readonly<Record<string, string>> = {
@@ -20,7 +21,7 @@ const WHAT_EACH_STAGE_DOES: Readonly<Record<string, string>> = {
   extract: 'A model transcribes what is printed on the page. It copies figures out; it does not work any out.',
   resolve_vendor: 'We match the printed company name against the approved vendor list.',
   match_po: 'We find the purchase order the invoice is billing against.',
-  validate: 'Twenty-three checks run over the figures, the vendor and the order.',
+  validate: 'Every check that applies runs over the figures, the vendor and the order.',
   decide: 'The checks are read in a fixed order. The first one that objects sets the outcome.',
   explain: 'The settled outcome is written up in a sentence or two.',
 }
@@ -28,6 +29,10 @@ const WHAT_EACH_STAGE_DOES: Readonly<Record<string, string>> = {
 const OUTCOMES: Verdict[] = ['AUTO_APPROVE', 'REVIEW', 'HOLD', 'BLOCK']
 
 export default function Process() {
+  // Which stage is open. One at a time: the page is a sequence, and two stages
+  // open at once turns it into a wall.
+  const [open, setOpen] = useState<string | null>(null)
+
   return (
     <AppShell>
       <PageBody>
@@ -53,21 +58,49 @@ export default function Process() {
               The seven stages, in order
             </PanelHeading>
 
+            {/* Each stage opens on what it looks at. The arrows that used to sit
+                here looked like controls and did nothing, which is worse than no
+                control at all. */}
             <ol className="divide-y divide-line-soft">
-              {PIPELINE_STAGES.map((stage, index) => (
-                <li key={stage} className="flex items-start gap-4 px-5 py-3.5">
-                  <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-line text-xs text-muted tnum">
-                    {index + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-sm font-medium text-ink">{stageLabel(stage)}</h3>
-                    <p className="mt-0.5 text-sm text-muted">{WHAT_EACH_STAGE_DOES[stage]}</p>
-                  </div>
-                  {index < PIPELINE_STAGES.length - 1 ? (
-                    <ArrowRight className="mt-1 size-4 shrink-0 text-line" aria-hidden="true" />
-                  ) : null}
-                </li>
-              ))}
+              {PIPELINE_STAGES.map((stage, index) => {
+                const expanded = open === stage
+                const checks = stageChecks(stage)
+                return (
+                  <li key={stage}>
+                    <button
+                      type="button"
+                      onClick={() => setOpen(expanded ? null : stage)}
+                      aria-expanded={expanded}
+                      aria-controls={`stage-${stage}`}
+                      className="flex w-full items-start gap-4 px-5 py-3.5 text-left transition-colors hover:bg-line-soft/60"
+                    >
+                      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-line text-xs text-muted tnum">
+                        {index + 1}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-ink">{stageLabel(stage)}</span>
+                        <span className="mt-0.5 block text-sm text-muted">{WHAT_EACH_STAGE_DOES[stage]}</span>
+                      </span>
+                      <ChevronDown
+                        className={cn('mt-1 size-4 shrink-0 text-muted transition-transform', expanded && 'rotate-180')}
+                        aria-hidden="true"
+                      />
+                    </button>
+                    {expanded ? (
+                      <div id={`stage-${stage}`} className="pb-4 pr-5 pl-[3.75rem]">
+                        <h4 className="text-xs text-muted">What this stage looks at</h4>
+                        <ul className="mt-1.5 space-y-1">
+                          {checks.map((check) => (
+                            <li key={check} className="text-sm text-ink-soft">
+                              {check}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </li>
+                )
+              })}
             </ol>
           </Panel>
 

@@ -16,7 +16,7 @@ import { INTERNAL_KEYS } from '../src/lib/format.ts'
 import { FAILED_RUN_LABEL, FAILED_RUN_SENTENCE } from '../src/lib/reasonCopy.ts'
 import { rowForShortId } from '../src/lib/feed.ts'
 import { BUSINESS_DIFF_FIELDS } from '../src/lib/decisionData.ts'
-import { EXPLAIN_PROMPT, fallbackExplanation } from '../src/rules/explain.ts'
+import { EXPLAIN_PROMPT, buildExplainUserMessage, fallbackExplanation } from '../src/rules/explain.ts'
 import { REASON_CODES } from '../src/rules/types.ts'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -186,6 +186,29 @@ describe('explanations are written to the reader', () => {
     expect(EXPLAIN_PROMPT).toContain('Write to the reader')
   })
 
+  // An explanation that asserts an outcome is wrong the moment a person
+  // overrides it, and it was: an approved invoice sat under a paragraph
+  // explaining why it had been put under review. The chip and the override
+  // banner carry the outcome. This carries the findings, which stay true.
+  it('forbids the model from saying what happens to the invoice', () => {
+    expect(EXPLAIN_PROMPT).toContain('Never say what happens to the invoice')
+    for (const outcome of ['approved', 'held', 'blocked', 'under review']) {
+      expect(EXPLAIN_PROMPT, outcome).toContain(outcome)
+    }
+  })
+
+  it('does not hand the model the verdict at all', () => {
+    // The surest way not to have it restated.
+    const message = buildExplainUserMessage({
+      verdict: 'BLOCK',
+      reason_codes: ['BANK_DETAIL_MISMATCH'],
+      evidence: {},
+      summary: { invoice_number: 'ZT-1' },
+    })
+    expect(message).not.toContain('BLOCK')
+    expect(message).toContain('BANK_DETAIL_MISMATCH')
+  })
+
   it('never lets the system be the subject of the fallback sentence', () => {
     const text = fallbackExplanation({
       verdict: 'HOLD',
@@ -195,8 +218,101 @@ describe('explanations are written to the reader', () => {
     })
     expect(text.toLowerCase()).not.toContain('accounts payable')
     expect(text.split(/\s+/).length).toBeLessThan(60)
-    // The problem comes first, the outcome second.
-    expect(text.indexOf('approved vendor') === -1 || text.indexOf('on hold') > 0).toBe(true)
+    // The problem comes first, and the document second. Neither is an outcome.
+    expect(text).toContain('ZT-1')
+    for (const outcome of ['on hold', 'needs somebody', 'will not be paid', 'cleared every check']) {
+      expect(text.toLowerCase(), outcome).not.toContain(outcome)
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A check that compares against other invoices shows them
+// ---------------------------------------------------------------------------
+
+// Whether a near-duplicate is a resubmission or a monthly bill is the whole
+// judgement, and it is not one the rules can make. The reader was given the
+// finding and none of the evidence behind it.
+describe('cross-invoice findings show what they were compared against', () => {
+  const detail = readFileSync(join(repoRoot, 'src/components/DecisionDetail.tsx'), 'utf8')
+
+  it('shows the panel only when such a check actually fired', () => {
+    expect(detail).toContain('data.othersLikeThis.length > 0')
+  })
+
+  it('reads both cross-invoice checks, not just the duplicate one', () => {
+    const data = readFileSync(join(repoRoot, 'src/lib/decisionData.ts'), 'utf8')
+    expect(data).toContain("comparedInvoices(validations, 'near_duplicate', 'matches')")
+    expect(data).toContain("comparedInvoices(validations, 'threshold_split', 'invoices')")
+  })
+
+  it('puts the days between them and the difference in amount on each row', () => {
+    expect(detail).toContain('days apart')
+    expect(detail).toContain('row.amountDifference')
+  })
+
+  it('links every invoice it lists to its decision', () => {
+    expect(detail).toContain('to={`/decisions/${row.runId}`}')
+  })
+
+  it('marks the ones whose value the order has already committed', () => {
+    expect(detail).toContain('row.countsAgainstTheOrder')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Orders are somewhere a person can look
+// ---------------------------------------------------------------------------
+
+describe('purchase orders have a screen', () => {
+  it('is on the sidebar', () => {
+    const shell = readFileSync(join(repoRoot, 'src/components/AppShell.tsx'), 'utf8')
+    expect(shell).toContain("{ to: '/orders', label: 'Orders'")
+  })
+
+  it('is routed, with the order number never read as the word new', () => {
+    const app = readFileSync(join(repoRoot, 'src/App.tsx'), 'utf8')
+    const list = app.indexOf('path="/orders"')
+    const raise = app.indexOf('path="/orders/new"')
+    const one = app.indexOf('path="/orders/:poNumber"')
+    expect(list).toBeGreaterThan(-1)
+    expect(raise).toBeLessThan(one)
+  })
+
+  it('is linked from the order panel on a decision', () => {
+    const detail = readFileSync(join(repoRoot, 'src/components/DecisionDetail.tsx'), 'utf8')
+    expect(detail).toContain('to={`/orders/${encodeURIComponent(data.order.po_number)}`}')
+  })
+
+  it('reads what an order has been billed from the invoices, not from the row', () => {
+    // The column is an opening balance and nothing writes to it, so a screen that
+    // reads it alone reports zero however much has been approved.
+    const orders = readFileSync(join(repoRoot, 'src/lib/orders.ts'), 'utf8')
+    expect(orders).toContain('approvedAgainst(order.po_number, documents)')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Nothing looks like a control unless it is one
+// ---------------------------------------------------------------------------
+
+describe('the stages on the process page', () => {
+  const process = readFileSync(join(repoRoot, 'src/pages/Process.tsx'), 'utf8')
+
+  it('carries no arrow that does nothing', () => {
+    expect(process).not.toContain('ArrowRight')
+  })
+
+  it('opens each stage on what that stage looks at', () => {
+    expect(process).toContain('aria-expanded={expanded}')
+    expect(process).toContain('stageChecks(stage)')
+  })
+
+  it('takes the checks from the table the engine is described by', () => {
+    // So a check added to the engine appears here without anyone writing it out
+    // a second time.
+    const copy = readFileSync(join(repoRoot, 'src/lib/reasonCopy.ts'), 'utf8')
+    expect(copy).toContain('validate: Object.values(CHECK_LABEL)')
   })
 })
 

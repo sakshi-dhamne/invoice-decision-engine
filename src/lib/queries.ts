@@ -1,5 +1,5 @@
 import { supabase } from './supabase.ts'
-import { latestRunPerInvoice } from './feed.ts'
+import { latestRunPerInvoice } from './runState.ts'
 import type {
   AssumptionRow,
   InvoiceRow,
