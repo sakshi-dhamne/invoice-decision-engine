@@ -356,14 +356,6 @@ export async function createPurchaseOrder(order: PurchaseOrderInsert): Promise<P
   return data
 }
 
-// Invoices that have never completed a run. "Fetch new invoices" works through
-// these and nothing else, so pressing it twice does not re-run the whole corpus.
-export async function getInvoicesWithoutCompletedRun(): Promise<InvoiceRow[]> {
-  const [invoices, runs] = await Promise.all([getInvoices(), getCompletedRuns()])
-  const decided = new Set(runs.map((run) => run.invoice_id).filter((id): id is string => id !== null))
-  return invoices.filter((invoice) => !decided.has(invoice.id))
-}
-
 // How long each extraction actually took, from the stage log the pipeline writes.
 // The dashboard reports the median of these rather than a cost, because the token
 // counts and the price list that a cost needs are not recorded anywhere.

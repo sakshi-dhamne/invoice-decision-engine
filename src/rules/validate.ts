@@ -24,6 +24,7 @@ import {
   roundTo,
   sum,
   toleranceFor,
+  withinTolerance,
   tokenize,
 } from './normalize.ts'
 import { grossLineAmounts, invoiceGrossTotal } from './poMatch.ts'
@@ -394,12 +395,26 @@ export function reconcileLines(
 }
 
 /**
- * Every invoice line must be accounted for by the PO — never silently ignored.
+ * Every invoice line must be accounted for by the PO, never silently ignored.
  *
  * A line that maps to no PO line by description is not automatically wrong: an
- * invoice is free to describe in one line what the PO itemised in four. It is
- * wrong when it bills beyond the PO value that nothing else has accounted for,
- * which is exactly what an added line looks like.
+ * invoice is free to describe in one line what the PO itemised in four, and just
+ * as free to itemise in four what the PO bundled into one. It is wrong when it
+ * bills beyond the PO value that nothing else has accounted for, which is what an
+ * added line looks like.
+ *
+ * Two ways an invoice can be covered, and it only needs one:
+ *
+ *  - line by line, where what the unmapped lines bill sits inside the PO value
+ *    nothing else has claimed;
+ *  - in total, where every line on the invoice adds up to what the order
+ *    authorised. A vendor itemising a bundle maps nothing at all by description,
+ *    because there is one order line and several invoice lines with different
+ *    wording, and the first test then reads a fully accounted invoice as entirely
+ *    unmapped. What matters is whether more is being billed than was ordered, and
+ *    an invoice that adds up to the order is not billing more than it.
+ *
+ * Both are measured with the same tolerance every other amount comparison uses.
  */
 export function checkLineCoverage(
   reconciliation: LineReconciliation,
@@ -415,6 +430,16 @@ export function checkLineCoverage(
   const allowance = toleranceFor(unaccountedPoTotal, rules.matching_tolerance_pct, rules.matching_tolerance_floor)
   const excess = roundTo(unmappedInvoiceTotal - unaccountedPoTotal, 2)
 
+  // Every line on the invoice, mapped or not, on the same gross basis the order
+  // states its total in.
+  const billedTotal = roundTo(
+    sum(reconciliation.groups.map((group) => group.invoice_gross_amount)) + unmappedInvoiceTotal,
+    2,
+  )
+  const linesSumToOrderTotal =
+    isFiniteNumber(po.total_amount) &&
+    withinTolerance(billedTotal, po.total_amount, rules.matching_tolerance_pct, rules.matching_tolerance_floor)
+
   const evidence: Evidence = {
     unmapped_invoice_lines: reconciliation.unmapped_invoice,
     unaccounted_po_lines: reconciliation.unmapped_po,
@@ -423,9 +448,12 @@ export function checkLineCoverage(
     excess,
     allowance: roundTo(allowance, 2),
     similarity_threshold: rules.line_match_threshold,
+    billed_total: billedTotal,
+    po_total: po.total_amount,
+    lines_sum_to_order_total: linesSumToOrderTotal,
   }
 
-  return excess <= allowance ? pass(evidence) : fail('UNMATCHED_LINE_ITEM', evidence)
+  return excess <= allowance || linesSumToOrderTotal ? pass(evidence) : fail('UNMATCHED_LINE_ITEM', evidence)
 }
 
 /**

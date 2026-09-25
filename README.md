@@ -15,7 +15,7 @@ No model output can change an outcome, and a failed phrasing call never fails a 
 | Stage | Module | What it does |
 |---|---|---|
 | 1 ingest | `src/lib/pipeline.ts` | Locates the document, records its content hash |
-| 2 extract | `src/lib/extraction.ts` | Reads through the extraction cache; a cached result is not a model call |
+| 2 extract | `src/lib/extraction.ts` | Reads through the extraction cache; a cached result is not a model call. The document's type is read off its first bytes, never off the header alone |
 | 3 resolve vendor | `src/rules/vendor.ts` | Normalise, then fuzzy-match the printed name against the master and its aliases |
 | 4 match PO | `src/rules/poMatch.ts` | Explicit reference short-circuits; otherwise amount, description and date signals, never guessing between close candidates |
 | 5 validate | `src/rules/validate.ts` | Every check, each a pure function returning `{ passed, code?, evidence? }` |

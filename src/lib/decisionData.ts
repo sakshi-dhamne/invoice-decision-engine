@@ -267,7 +267,13 @@ export function readFields(data: DecisionData, format: { money: (v: number | nul
     { key: 'subtotal', label: 'Subtotal', value: format.money(num('subtotal')), flagged: flagged('subtotal') },
     { key: 'tax', label: 'Tax', value: format.money(num('tax')), flagged: flagged('tax') },
     { key: 'total', label: 'Total', value: format.money(num('total')), flagged: flagged('total') },
+    // The payment block, read as three separate things. The bank is where the
+    // account sits; the pay-to is who the money reaches. Reading them as one put a
+    // bank's name in the field the payee check compares, which is the field that
+    // decides whether the money is going somewhere the order was raised with.
     { key: 'bank_account', label: 'Bank account', value: text('bank_account'), mono: true, flagged: flagged('bank_account') },
+    { key: 'bank_ifsc', label: 'IFSC', value: text('bank_ifsc'), mono: true, flagged: flagged('bank_ifsc') },
+    { key: 'bank_name', label: 'Bank', value: text('bank_name'), flagged: flagged('bank_name') },
     { key: 'remit_to_name', label: 'Pay to', value: text('remit_to_name'), flagged: flagged('remit_to_name') },
   ]
 }

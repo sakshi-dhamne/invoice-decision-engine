@@ -42,7 +42,8 @@ const RECORD_INVOICE_INPUT_SCHEMA = {
     total: { type: ['number', 'null'] },
     bank_account: { type: ['string', 'null'] },
     bank_ifsc: { type: ['string', 'null'] },
-    remit_to_name: { type: ['string', 'null'] },
+    bank_name: { type: ['string', 'null'], description: 'The bank holding the account, never the payee' },
+    remit_to_name: { type: ['string', 'null'], description: 'The party being paid, never their bank' },
     document_type: { type: 'string', enum: ['invoice', 'credit_note'] },
     notes: { type: ['string', 'null'] },
     confidence: {

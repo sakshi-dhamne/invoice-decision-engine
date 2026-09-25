@@ -164,6 +164,27 @@ describe('internal references stay out of the way', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Nothing on screen that does nothing
+// ---------------------------------------------------------------------------
+
+describe('the queue offers no control it cannot act on', () => {
+  const exceptions = readFileSync(join(repoRoot, 'src/pages/Exceptions.tsx'), 'utf8')
+
+  it('has no fetch button, which only ever had nothing to fetch', () => {
+    // Every seeded invoice has a completed run, so it worked through an empty
+    // list and reported nothing. A control that answers nothing is worse than no
+    // control.
+    expect(exceptions).not.toContain('Fetch new invoices')
+    expect(exceptions).not.toContain('getInvoicesWithoutCompletedRun')
+  })
+
+  it('leaves no query behind that only that button called', () => {
+    const queries = readFileSync(join(repoRoot, 'src/lib/queries.ts'), 'utf8')
+    expect(queries).not.toContain('getInvoicesWithoutCompletedRun')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // The shell fills the screen
 // ---------------------------------------------------------------------------
 
