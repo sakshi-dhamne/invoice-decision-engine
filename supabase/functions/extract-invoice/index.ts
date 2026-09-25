@@ -15,7 +15,11 @@
 import {
   ACCEPTED_DOCUMENT_TYPES,
   EXTRACTION_PROMPT,
+  headFromBase64,
   isAcceptedDocumentType,
+  looksLikeText,
+  sniffDocumentType,
+  unreadableDocumentMessage,
   type ExtractInvoiceRequest,
   type ExtractInvoiceResponse,
 } from '../../../src/lib/extractionSchema.ts'
@@ -68,17 +72,40 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ ok: false, error: 'pdf_base64 is required' } satisfies ExtractInvoiceResponse, 400)
   }
 
-  // A document with no declared type is a PDF, which is what every caller sent
-  // before images were accepted.
-  const mimeType = request.mime_type ?? 'application/pdf'
-  if (!isAcceptedDocumentType(mimeType)) {
+  const declaredType = request.mime_type
+  if (declaredType !== undefined && !isAcceptedDocumentType(declaredType)) {
     return jsonResponse(
       {
         ok: false,
-        error: `mime_type "${mimeType}" is not one this function reads. Accepted: ${ACCEPTED_DOCUMENT_TYPES.join(', ')}`,
+        error: `mime_type "${declaredType}" is not one this function reads. Accepted: ${ACCEPTED_DOCUMENT_TYPES.join(', ')}`,
       } satisfies ExtractInvoiceResponse,
       400,
     )
+  }
+
+  /**
+   * What the payload actually is, checked here as well as at the caller.
+   *
+   * The model rejects a mislabelled document with a 400 that names nothing about
+   * the document, so the last place that can tell the difference should be the one
+   * that says so. Sniffing the first bytes costs one small decode and catches both
+   * halves of the problem: bytes that are not a document at all, and bytes that
+   * are a document of a different kind from the one declared. The signature wins
+   * over the declaration, because the bytes are what the model will read.
+   */
+  const head = headFromBase64(request.pdf_base64)
+  const sniffed = sniffDocumentType(head)
+  // A page or an error body is refused however it is labelled; anything else with
+  // no signature we know is taken at its word.
+  const mimeType = sniffed ?? (looksLikeText(head) ? undefined : declaredType)
+  if (!mimeType) {
+    return jsonResponse(
+      { ok: false, error: unreadableDocumentMessage(declaredType ?? null) } satisfies ExtractInvoiceResponse,
+      400,
+    )
+  }
+  if (sniffed && declaredType && sniffed !== declaredType) {
+    console.log(`extract-invoice mislabelled declared=${declaredType} actual=${sniffed}`)
   }
 
   let chain: ChainEntry[]
@@ -111,7 +138,10 @@ Deno.serve(async (req: Request) => {
   const result = await runProviderChain({
     chain,
     label: 'extract-invoice',
-    logContext: `invoice_number=${invoiceNumber}`,
+    // The document's kind and size sit beside every attempt, so a provider error
+    // about a request can be read against what the request actually carried. A
+    // model's 400 says nothing about the document; this line does.
+    logContext: `invoice_number=${invoiceNumber} document=${mimeType} bytes=${Math.round((request.pdf_base64.length * 3) / 4)}`,
     build: (entry) => {
       const provider = buildProvider(entry, geminiKey, anthropicKey)
       return provider ? () => provider.extract(request.pdf_base64, EXTRACTION_PROMPT, mimeType) : null

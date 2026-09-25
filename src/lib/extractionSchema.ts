@@ -23,6 +23,7 @@ export const EXTRACTION_FIELDS = [
   'total',
   'bank_account',
   'bank_ifsc',
+  'bank_name',
   'remit_to_name',
   'document_type',
   'notes',
@@ -44,6 +45,11 @@ export interface ExtractionResult {
   total: number | null
   bank_account: string | null
   bank_ifsc: string | null
+  // The bank the account sits in, which is not the party being paid. Held apart
+  // from remit_to_name because a payment block names both and they were being
+  // read as one: an invoice whose block said "PUNJAB & SIND BANK" came back with
+  // the bank as its payee, and the payee is what the entity check compares.
+  bank_name: string | null
   remit_to_name: string | null
   document_type: DocumentType
   notes: string | null
@@ -70,6 +76,109 @@ export type AcceptedDocumentType = (typeof ACCEPTED_DOCUMENT_TYPES)[number]
 
 export function isAcceptedDocumentType(value: unknown): value is AcceptedDocumentType {
   return typeof value === 'string' && (ACCEPTED_DOCUMENT_TYPES as readonly string[]).includes(value)
+}
+
+// ---------------------------------------------------------------------------
+// What the bytes actually are
+// ---------------------------------------------------------------------------
+
+/**
+ * The document's type, read off the document.
+ *
+ * A declared type is a claim about bytes, and the claim can be wrong. The way it
+ * goes wrong in this product is specific and was worth a lot of confusion: the
+ * seeded PDFs are served as static files from the same origin as the app, and the
+ * app rewrites every unmatched path to index.html. A PDF that is missing from the
+ * deployment therefore comes back as an HTML page, with status 200 and a content
+ * type of text/html. Nothing downstream read the type as unusable, because the
+ * client's fallback for an unrecognised header was to call it a PDF, so a web page
+ * was posted to the model labelled as a document, and the model answered 400
+ * INVALID_ARGUMENT. Every PDF failed and every image was fine, which is exactly
+ * what it looks like when the PDFs are the ones being served from the app.
+ *
+ * So the bytes decide. Every accepted format carries a signature in its first few
+ * bytes, and none of them is ambiguous.
+ */
+const SIGNATURES: readonly { type: AcceptedDocumentType; magic: readonly number[] }[] = [
+  // "%PDF-"
+  { type: 'application/pdf', magic: [0x25, 0x50, 0x44, 0x46, 0x2d] },
+  { type: 'image/png', magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { type: 'image/jpeg', magic: [0xff, 0xd8, 0xff] },
+]
+
+// HEIC and WebP both start with a container header and name the format a few
+// bytes in, so they are read as a box rather than as a prefix.
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1']
+
+function ascii(head: Uint8Array, from: number, length: number): string {
+  return String.fromCharCode(...head.subarray(from, from + length))
+}
+
+/** How many bytes `sniffDocumentType` needs. Everything it reads is in the first 16. */
+export const DOCUMENT_HEAD_BYTES = 16
+
+export function sniffDocumentType(head: Uint8Array): AcceptedDocumentType | null {
+  for (const { type, magic } of SIGNATURES) {
+    if (magic.every((byte, index) => head[index] === byte)) return type
+  }
+  // "RIFF" .... "WEBP"
+  if (ascii(head, 0, 4) === 'RIFF' && ascii(head, 8, 4) === 'WEBP') return 'image/webp'
+  // An ISO base-media box: its size, then "ftyp", then the brand.
+  if (ascii(head, 4, 4) === 'ftyp' && HEIC_BRANDS.includes(ascii(head, 8, 4))) return 'image/heic'
+  return null
+}
+
+/**
+ * The first bytes of a base64 payload, for sniffing.
+ *
+ * Decodes a prefix rather than the whole document: the signature is in the first
+ * few bytes and the payload is megabytes. The slice is cut to a multiple of four
+ * so it decodes cleanly on its own.
+ */
+export function headFromBase64(base64: string, bytes: number = DOCUMENT_HEAD_BYTES): Uint8Array {
+  const characters = Math.ceil(bytes / 3) * 4
+  const prefix = base64.slice(0, characters)
+  const usable = prefix.slice(0, prefix.length - (prefix.length % 4))
+  if (usable.length === 0) return new Uint8Array()
+  try {
+    const binary = atob(usable)
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  } catch {
+    return new Uint8Array()
+  }
+}
+
+/**
+ * Bytes that are plainly not a document, whatever anything says they are.
+ *
+ * A server with no document to serve sends a page or an error body, and both are
+ * text. This is the case a declared type cannot be trusted through: the whole
+ * failure was an HTML page going to the model under a document's name, so a
+ * declaration of "application/pdf" over "<!doctype html>" is the claim to refuse
+ * rather than the claim to believe.
+ *
+ * Deliberately narrow. It answers for markup and for JSON, and leaves every
+ * binary format that simply has no signature we know to the declaration.
+ */
+export function looksLikeText(head: Uint8Array): boolean {
+  let index = 0
+  // A byte-order mark, then whitespace, then the first thing that means anything.
+  if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) index = 3
+  while (index < head.length && (head[index] === 0x20 || head[index] === 0x09 || head[index] === 0x0a || head[index] === 0x0d)) {
+    index += 1
+  }
+  const first = head[index]
+  return first === 0x3c || first === 0x7b || first === 0x5b
+}
+
+/** What to say when something that is not a document arrives where one should be. */
+export function unreadableDocumentMessage(declaredType: string | null | undefined): string {
+  const declared = declaredType?.trim()
+  return (
+    'This file is not a PDF or an image we can read' +
+    (declared ? `; it arrived as ${declared}` : '') +
+    '. If it is a seeded invoice, check the document is present at the address it is served from.'
+  )
 }
 
 export interface ExtractInvoiceRequest {
@@ -125,7 +234,8 @@ export const GEMINI_RESPONSE_SCHEMA = {
     total: { type: 'NUMBER', nullable: true },
     bank_account: { type: 'STRING', nullable: true },
     bank_ifsc: { type: 'STRING', nullable: true },
-    remit_to_name: { type: 'STRING', nullable: true },
+    bank_name: { type: 'STRING', nullable: true, description: 'The bank holding the account, never the payee' },
+    remit_to_name: { type: 'STRING', nullable: true, description: 'The party being paid, never their bank' },
     document_type: { type: 'STRING', enum: ['invoice', 'credit_note'] },
     notes: { type: 'STRING', nullable: true },
     confidence: {
@@ -150,7 +260,8 @@ Rules:
 4. Transcribe the vendor name exactly as printed, including suffixes, punctuation and spacing. Do not normalise or expand abbreviations.
 5. Amounts as plain numbers — no currency symbols, no thousands separators. ₹1,84,500 becomes 184500.
 6. Dates as ISO YYYY-MM-DD.
-7. remit_to_name is whoever the document says to pay, which may differ from the vendor in the letterhead. Transcribe both separately and do not reconcile them.
+7. remit_to_name is the party being paid: the account holder the payment block names, which may differ from the vendor in the letterhead. Transcribe both separately and do not reconcile them.
+7a. bank_name is the bank the account sits in, printed beside the branch, the IFSC or the SWIFT code. The two are different things: the bank is where the money goes, the remit-to is who it goes to. A block reading "Bank: STATE CO-OPERATIVE BANK / Branch: Fort / A/c name: Larksfield Engineering" has bank_name "STATE CO-OPERATIVE BANK" and remit_to_name "Larksfield Engineering". Never put a bank in remit_to_name: if the block names a bank and no account holder, remit_to_name is null and goes in unreadable_fields.
 8. A negative total or a document titled CREDIT NOTE means document_type is credit_note.
 9. For each field give a confidence between 0 and 1 reflecting how clearly you could read it. Be conservative — blurred, rotated or low-contrast text should score low even if you think you know what it says.
 10. Note anything structurally odd in extraction_notes: amounts that appear inconsistent, missing sections, signs the document has been altered. Describe what you observe; do not conclude anything about it.`
@@ -165,6 +276,11 @@ const STRING_OR_NULL_FIELDS = [
   'bank_ifsc',
   'remit_to_name',
 ] as const
+
+// Fields added after extractions had already been cached. An absent one reads as
+// null rather than as a malformed response, so a stored extraction from before
+// the field existed is still a valid extraction.
+const LATER_STRING_FIELDS = ['bank_name'] as const
 
 const NUMBER_OR_NULL_FIELDS = ['subtotal', 'tax', 'total'] as const
 
@@ -181,6 +297,12 @@ export function describeExtractionResultShapeError(value: unknown): string | nul
 
   for (const field of STRING_OR_NULL_FIELDS) {
     if (v[field] !== null && typeof v[field] !== 'string') return `${field} must be a string or null`
+  }
+
+  for (const field of LATER_STRING_FIELDS) {
+    if (v[field] !== undefined && v[field] !== null && typeof v[field] !== 'string') {
+      return `${field} must be a string or null`
+    }
   }
 
   for (const field of NUMBER_OR_NULL_FIELDS) {

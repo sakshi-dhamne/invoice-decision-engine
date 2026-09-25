@@ -188,6 +188,8 @@ export default function RunLive() {
       { label: 'Tax', value: money(num('tax')) },
       { label: 'Total', value: money(num('total')) },
       { label: 'Bank account', value: text('bank_account'), mono: true },
+      { label: 'IFSC', value: text('bank_ifsc'), mono: true },
+      { label: 'Bank', value: text('bank_name') },
       { label: 'Pay to', value: text('remit_to_name') },
     ]
   }, [extractLog])

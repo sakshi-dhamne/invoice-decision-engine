@@ -6,6 +6,13 @@ import { ProviderError, type ExtractionProvider, type TextCompletion, type TextP
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
+// Only the parts of a response this adapter reads. Typed so the two readers below
+// are checked rather than reaching into an untyped blob.
+interface GeminiPayload {
+  candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[]
+  usageMetadata?: { thoughtsTokenCount?: number }
+}
+
 /**
  * How much the model may think before it answers.
  *
@@ -63,7 +70,7 @@ export function createGeminiProvider(model: string, apiKey: string): ExtractionP
         throw new ProviderError(`Gemini request failed (${response.status}): ${errorText}`, response.status)
       }
 
-      const payload = await response.json()
+      const payload = (await response.json()) as GeminiPayload
       const text = payload?.candidates?.[0]?.content?.parts?.[0]?.text
       if (typeof text !== 'string') {
         throw new ProviderError(`Gemini response had no text part: ${JSON.stringify(payload)}`, 502)
@@ -102,7 +109,7 @@ export function createGeminiTextProvider(model: string, apiKey: string): TextPro
         throw new ProviderError(`Gemini request failed (${response.status}): ${errorText}`, response.status)
       }
 
-      const payload = await response.json()
+      const payload = (await response.json()) as GeminiPayload
 
       /**
        * The answer, and not the thinking.
@@ -113,7 +120,7 @@ export function createGeminiTextProvider(model: string, apiKey: string): TextPro
        * all. Joining the parts that are not thoughts is correct whether or not any
        * thinking happened.
        */
-      const parts: { text?: string; thought?: boolean }[] = payload?.candidates?.[0]?.content?.parts ?? []
+      const parts = payload?.candidates?.[0]?.content?.parts ?? []
       const text = parts
         .filter((part) => part?.thought !== true && typeof part?.text === 'string')
         .map((part) => part.text ?? '')

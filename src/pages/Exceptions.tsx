@@ -17,7 +17,7 @@ import { AppShell } from '@/components/AppShell.tsx'
 import { DecisionDetail, type DecisionDetailHandle } from '@/components/DecisionDetail.tsx'
 import { Explainer } from '@/components/Explainer.tsx'
 import { ProportionBar } from '@/components/ProportionBar.tsx'
-import { EmptyState, ErrorNote, Loading, OutcomeChip, Spinner } from '@/components/Primitives.tsx'
+import { EmptyState, ErrorNote, Loading, OutcomeChip } from '@/components/Primitives.tsx'
 import { useUpload } from '@/components/uploadContext.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -35,8 +35,6 @@ import {
   type SortKey,
 } from '@/lib/feed.ts'
 import { dismissExplainer, explainerDismissed } from '@/lib/localSettings.ts'
-import { runInvoice } from '@/lib/pipeline.ts'
-import { getInvoicesWithoutCompletedRun } from '@/lib/queries.ts'
 import { VERDICT_LABEL } from '@/lib/reasonCopy.ts'
 import type { Verdict } from '@/lib/database.types.ts'
 
@@ -65,7 +63,6 @@ export default function Exceptions() {
   const [vendorFilter, setVendorFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('age')
   const [explainerOpen, setExplainerOpen] = useState(() => !explainerDismissed())
-  const [fetching, setFetching] = useState<string | null>(null)
   const [params, setParams] = useSearchParams()
   const { openUpload, finishedAt } = useUpload()
   const detail = useRef<DecisionDetailHandle | null>(null)
@@ -175,23 +172,6 @@ export default function Exceptions() {
     return () => window.removeEventListener('keydown', onKey)
   }, [queue, selectedIndex, selected, select])
 
-  const fetchNew = async () => {
-    setFetching('Looking')
-    setError(null)
-    try {
-      const pending = await getInvoicesWithoutCompletedRun()
-      for (const [index, invoice] of pending.entries()) {
-        setFetching(`${index + 1} of ${pending.length}`)
-        await runInvoice(invoice.id).catch(() => undefined)
-      }
-      await load()
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The new invoices could not be fetched.')
-    } finally {
-      setFetching(null)
-    }
-  }
-
   const dismiss = () => {
     dismissExplainer()
     setExplainerOpen(false)
@@ -224,17 +204,6 @@ export default function Exceptions() {
               placeholder="Search invoices and vendors"
               className="h-8 w-52 rounded-md border border-line bg-surface px-2.5 text-sm text-ink placeholder:text-muted"
             />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={fetchNew}
-              disabled={fetching !== null}
-              className="gap-2"
-            >
-              {fetching ? <Spinner /> : null}
-              {fetching ?? 'Fetch new invoices'}
-            </Button>
           </div>
         </div>
 

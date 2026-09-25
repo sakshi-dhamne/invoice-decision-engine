@@ -1,6 +1,10 @@
 import { supabase } from './supabase.ts'
 import {
+  DOCUMENT_HEAD_BYTES,
   isAcceptedDocumentType,
+  looksLikeText,
+  sniffDocumentType,
+  unreadableDocumentMessage,
   type AcceptedDocumentType,
   type ExtractInvoiceResponse,
   type ExtractionProviderName,
@@ -70,15 +74,30 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary)
 }
 
-// Bytes already in hand, packaged for the edge function. A seeded fixture is
-// always a PDF; an uploaded document is whatever content type it was stored with,
-// which is how a phone photo keeps its identity all the way to the model.
+/**
+ * Bytes already in hand, packaged for the edge function.
+ *
+ * The type is read off the bytes, not off the header, and a header is consulted
+ * only for a format whose signature we do not recognise. Bytes that are neither a
+ * PDF nor an image we read are refused here rather than relabelled.
+ *
+ * That last part is the fix for a whole class of failure. This used to answer any
+ * unrecognised content type with "call it a PDF", so when the app's own rewrite
+ * served index.html in place of a missing invoice, an HTML page went to the model
+ * labelled as a document and came back 400 INVALID_ARGUMENT. Every PDF failed,
+ * every image was fine, and nothing in the message said why.
+ */
 export function documentFromBytes(buffer: ArrayBuffer, declaredType: string | null): FetchedDocument {
-  const declared = (declaredType ?? '').split(';')[0].trim()
-  return {
-    base64: arrayBufferToBase64(buffer),
-    mimeType: isAcceptedDocumentType(declared) ? declared : 'application/pdf',
-  }
+  const declared = (declaredType ?? '').split(';')[0].trim().toLowerCase()
+  const head = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, DOCUMENT_HEAD_BYTES))
+  const sniffed = sniffDocumentType(head)
+  // A page or an error body is refused however it is labelled. Anything else with
+  // no signature we know falls back to what the server called it.
+  const mimeType = sniffed ?? (!looksLikeText(head) && isAcceptedDocumentType(declared) ? declared : null)
+
+  if (!mimeType) throw new Error(unreadableDocumentMessage(declared || null))
+
+  return { base64: arrayBufferToBase64(buffer), mimeType }
 }
 
 async function fetchDocument(documentUrl: string): Promise<FetchedDocument> {

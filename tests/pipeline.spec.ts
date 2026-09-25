@@ -52,6 +52,7 @@ const extraction: ExtractionResult = {
   total: 141600,
   bank_account: '778899001122334',
   bank_ifsc: 'TEST0001234',
+  bank_name: null,
   remit_to_name: 'Westmark Paper Mills LLP',
   document_type: 'invoice',
   notes: 'printed note',
