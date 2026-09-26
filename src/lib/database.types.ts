@@ -204,6 +204,14 @@ export type Database = {
         EmptyRelationships
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      // Deletes a set of uploaded invoices and everything recorded about them, in
+      // one transaction and in the only order the foreign keys permit. Defined in
+      // supabase/migrations/013_maintenance_delete.sql, which explains why.
+      delete_invoices_cascade: {
+        Args: { invoice_ids: string[] }
+        Returns: Json
+      }
+    }
   }
 }

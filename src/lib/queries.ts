@@ -1,5 +1,7 @@
 import { supabase } from './supabase.ts'
 import { latestRunPerInvoice } from './runState.ts'
+import { stepFromMessage, type DeletionStep } from './maintenance.ts'
+import { UPLOAD_BUCKET } from './uploads.ts'
 import type {
   AssumptionRow,
   InvoiceRow,
@@ -433,4 +435,131 @@ export async function removeFailedRun(runId: string, invoiceId: string | null): 
 
   const { error: invoiceError } = await supabase.from('invoices').delete().eq('id', invoiceId)
   if (invoiceError) throw invoiceError
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance
+// ---------------------------------------------------------------------------
+
+export interface MaintenanceInventory {
+  invoices: InvoiceRow[]
+  /** Every run, not the latest per invoice: all of them go when a document does. */
+  runs: RunRow[]
+  /** How many stage logs each run carries, so the count is not a guess. */
+  stageLogCounts: Map<string, number>
+}
+
+// Supabase caps a select at 1000 rows by default, and a count the confirmation
+// panel understates is worse than no count at all. Stage logs are the one table
+// here that can run past it, so that read is paged.
+const PAGE_SIZE = 1000
+
+async function countStageLogsByRun(): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('stage_logs')
+      .select('run_id')
+      .order('run_id')
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw error
+    for (const row of data) counts.set(row.run_id, (counts.get(row.run_id) ?? 0) + 1)
+    if (data.length < PAGE_SIZE) return counts
+  }
+}
+
+/**
+ * Everything the maintenance screen has to show, and everything it has to count.
+ *
+ * Runs are ordered newest first, which is what buildInventory assumes when it picks
+ * the run whose outcome a row shows.
+ */
+export async function getMaintenanceInventory(): Promise<MaintenanceInventory> {
+  const [invoices, runs, stageLogCounts] = await Promise.all([
+    getInvoices(),
+    getRuns(),
+    countStageLogsByRun(),
+  ])
+  return { invoices, runs, stageLogCounts }
+}
+
+export interface DeletionReport {
+  invoices: number
+  runs: number
+  stageLogs: number
+  extractions: number
+  detachedLinks: number
+  files: number
+  /**
+   * Set when the records went and the files did not.
+   *
+   * Storage is not part of the database transaction, so this is the one outcome
+   * that cannot be made all-or-nothing. It is reported rather than thrown, because
+   * the records really are gone and saying otherwise would be wrong.
+   */
+  filesError: string | null
+}
+
+export type DeletionOutcome =
+  | { ok: true; report: DeletionReport }
+  | { ok: false; step: DeletionStep; detail: string; missingFunction: boolean }
+
+function numberFrom(value: Json | null, key: string): number {
+  const record = value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  const found = record?.[key]
+  return typeof found === 'number' ? found : 0
+}
+
+/**
+ * Deletes a set of uploaded invoices, in the only order the foreign keys allow.
+ *
+ * Steps 1 to 3 are one call to `delete_invoices_cascade`, which does them inside a
+ * single transaction: detach the runs pointing at runs that are going, delete the
+ * runs, delete the invoices. Stage logs and extractions cascade. If any of it
+ * fails, all of it rolls back and this reports which step stopped it, so a
+ * half-deleted set is not a state this can leave behind.
+ *
+ * Step 4, the stored files, happens afterwards because storage is not in the
+ * transaction. Records first is deliberate: a file nothing points at is clutter,
+ * whereas an invoice whose document has been deleted is a broken record.
+ */
+export async function deleteInvoicesAndFiles(
+  invoiceIds: readonly string[],
+  storagePaths: readonly string[],
+): Promise<DeletionOutcome> {
+  if (invoiceIds.length === 0) {
+    return {
+      ok: true,
+      report: { invoices: 0, runs: 0, stageLogs: 0, extractions: 0, detachedLinks: 0, files: 0, filesError: null },
+    }
+  }
+
+  const { data, error } = await supabase.rpc('delete_invoices_cascade', { invoice_ids: [...invoiceIds] })
+
+  if (error) {
+    // A project that has not had 013_maintenance_delete.sql applied answers that
+    // the function does not exist, which is a different problem from a failure
+    // inside it and has a different thing to do about it.
+    const missingFunction = /could not find the function|does not exist|PGRST202/i.test(
+      `${error.message} ${error.code ?? ''}`,
+    )
+    return { ok: false, step: stepFromMessage(error.message), detail: error.message, missingFunction }
+  }
+
+  const report: DeletionReport = {
+    invoices: numberFrom(data, 'invoices'),
+    runs: numberFrom(data, 'runs'),
+    stageLogs: numberFrom(data, 'stage_logs'),
+    extractions: numberFrom(data, 'extractions'),
+    detachedLinks: numberFrom(data, 'detached_links'),
+    files: 0,
+    filesError: null,
+  }
+
+  if (storagePaths.length === 0) return { ok: true, report }
+
+  const { error: storageError } = await supabase.storage.from(UPLOAD_BUCKET).remove([...storagePaths])
+  if (storageError) return { ok: true, report: { ...report, filesError: storageError.message } }
+
+  return { ok: true, report: { ...report, files: storagePaths.length } }
 }
