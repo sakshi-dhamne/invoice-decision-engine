@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { loadFeed, shortRunId, vendorNameFor, type FeedRow } from '@/lib/feed.ts'
 import { money } from '@/lib/format.ts'
+import type { Theme } from '@/lib/localSettings.ts'
 import { FAILED_RUN_LABEL, verdictLabel } from '@/lib/reasonCopy.ts'
 
 
@@ -23,11 +24,14 @@ const ROUTES = [
 export function CommandPalette({
   open,
   onOpenChange,
+  theme,
   onToggleTheme,
   onUpload,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  // Only so the theme entry can name the theme it switches to, like the rail button does.
+  theme: Theme
   onToggleTheme: () => void
   onUpload: () => void
 }) {
@@ -119,11 +123,12 @@ export function CommandPalette({
             Upload an invoice
           </Command.Item>
           <Command.Item
-            value="Switch the colour scheme"
+            value={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            keywords={['theme', 'colour scheme', 'color scheme', 'dark', 'light']}
             onSelect={() => run(onToggleTheme)}
             className="cursor-pointer rounded-md px-2 py-2 text-sm text-ink-soft data-[selected=true]:bg-line-soft"
           >
-            Switch the colour scheme
+            {theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           </Command.Item>
         </Command.Group>
       </Command.List>
