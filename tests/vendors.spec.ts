@@ -22,6 +22,7 @@ import {
   vendorPatchFor,
   type VendorEditValues,
 } from '../src/lib/vendorEdit.ts'
+import { aliasesFrom, newVendorIsComplete, vendorIdFor } from '../src/lib/newVendor.ts'
 import { VENDOR_FROM_SEED, vendorAddedBy } from '../src/lib/reasonCopy.ts'
 import type { VendorRow } from '../src/lib/database.types.ts'
 
@@ -264,5 +265,74 @@ describe('a vendor that came with the starting data', () => {
 
   it('keeps the real name for a vendor a person actually added', () => {
     expect(vendorAddedBy('Asha')).toBe('Added by Asha')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Adding a vendor, from either flow
+// ---------------------------------------------------------------------------
+
+describe('what a new vendor record is made of', () => {
+  const filled = {
+    legalName: 'Northwind Components Pvt Ltd',
+    gstin: '27AABCN1234C1Z5',
+    address: 'Unit 4, MIDC Industrial Area, Pune',
+    emailDomain: 'northwind.example',
+    alsoKnownAs: 'Northwind, Northwind Components',
+    bankAccount: '50100999888777',
+    ifsc: 'HDFC0001234',
+    confirmedBy: 'Rao, on the number on file',
+    addedBy: 'Sakshi',
+  }
+
+  it('derives a legible id from the name', () => {
+    expect(vendorIdFor('Northwind Components Pvt Ltd')).toMatch(/^NORTHW-[A-Z0-9]{4}$/)
+    expect(vendorIdFor('Acme Technologies')).toMatch(/^ACMETE-[A-Z0-9]{4}$/)
+  })
+
+  it('keeps two companies with the same stem apart', () => {
+    const ids = new Set(Array.from({ length: 50 }, () => vendorIdFor('Acme')))
+    expect(ids.size).toBeGreaterThan(1)
+  })
+
+  it('falls back to a name rather than an empty id when there is nothing to work from', () => {
+    expect(vendorIdFor('...')).toMatch(/^VENDOR-[A-Z0-9]{4}$/)
+    expect(vendorIdFor('')).toMatch(/^VENDOR-[A-Z0-9]{4}$/)
+  })
+
+  it('takes the other names as aliases, without repeating the legal name', () => {
+    expect(aliasesFrom('Northwind, Northwind Components', 'Northwind Components Pvt Ltd')).toEqual([
+      'Northwind',
+      'Northwind Components',
+    ])
+  })
+
+  it('drops the legal name and the blanks from the aliases', () => {
+    expect(aliasesFrom('Acme, , Acme Technologies Pvt Ltd,  ', 'Acme Technologies Pvt Ltd')).toEqual(['Acme'])
+    expect(aliasesFrom('', 'Acme')).toEqual([])
+  })
+
+  it('will not save until the name, the person and all three payment fields are there', () => {
+    expect(newVendorIsComplete(filled)).toBe(true)
+  })
+
+  it.each([
+    ['legalName', 'the registered name'],
+    ['addedBy', 'a name against the act'],
+    ['bankAccount', 'the account number'],
+    ['ifsc', 'the IFSC'],
+    ['confirmedBy', 'the verification note'],
+  ] as const)('refuses to save with no %s', (field, description) => {
+    expect(newVendorIsComplete({ ...filled, [field]: '' }), description).toBe(false)
+    // Whitespace is not an answer either.
+    expect(newVendorIsComplete({ ...filled, [field]: '   ' }), description).toBe(false)
+  })
+
+  it('does not require the fields a document would have supplied', () => {
+    // Tax number, address, billing domain and other names are all optional, on both
+    // flows. The standalone form has no document to read them from.
+    for (const field of ['gstin', 'address', 'emailDomain', 'alsoKnownAs'] as const) {
+      expect(newVendorIsComplete({ ...filled, [field]: '' }), field).toBe(true)
+    }
   })
 })

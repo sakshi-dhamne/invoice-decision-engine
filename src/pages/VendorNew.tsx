@@ -17,29 +17,21 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
+import VendorCreate from './VendorCreate.tsx'
 import { ErrorNote, Loading, PageBody, Panel, PanelHeading, Spinner, UnfilledInput } from '@/components/Primitives.tsx'
 import { tone } from '@/components/tone.ts'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { money, shortDate } from '@/lib/format.ts'
 import { runInvoice } from '@/lib/pipeline.ts'
-import { createVendor, getInvoiceById, getRunById, getStageLogs, updateRun } from '@/lib/queries.ts'
-import { recordVendorCreated } from '@/lib/vendorHistory.ts'
+import { getInvoiceById, getRunById, getStageLogs, updateRun } from '@/lib/queries.ts'
+import { createVendorWithTrail } from '@/lib/newVendor.ts'
+import { PAYMENT_CONFIRMATION_NOTE } from '@/lib/reasonCopy.ts'
 import { emptyPaymentFields, identityPrefill, paymentFieldsComplete } from '@/lib/vendorForm.ts'
 import type { InvoiceRow, RunRow } from '@/lib/database.types.ts'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
-}
-
-// Vendor ids are a text primary key. Derive something legible from the name and
-// keep it unique without asking the person to invent a code.
-function vendorIdFor(name: string): string {
-  const stem = name
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '')
-    .slice(0, 6)
-  return `${stem || 'VENDOR'}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
 
 const labelClass = 'block text-xs text-muted'
@@ -49,6 +41,16 @@ const inputClass =
 export default function VendorNew() {
   const [params] = useSearchParams()
   const fromRunId = params.get('from') ?? ''
+
+  // No invoice in scope, so this is the standalone flow rather than a broken
+  // version of this one. It used to answer with an error telling the reader to go
+  // and find a held invoice first.
+  if (!fromRunId) return <VendorCreate />
+  return <VendorForInvoice runId={fromRunId} />
+}
+
+function VendorForInvoice({ runId }: { runId: string }) {
+  const fromRunId = runId
   const navigate = useNavigate()
 
   const [run, setRun] = useState<RunRow | null>(null)
@@ -77,11 +79,6 @@ export default function VendorNew() {
   const [addedBy, setAddedBy] = useState('')
 
   const load = useCallback(async () => {
-    if (!fromRunId) {
-      setError('This page needs to be opened from a held invoice, so it knows which company you are adding.')
-      setLoaded(true)
-      return
-    }
     try {
       const fresh = await getRunById(fromRunId)
       if (!fresh?.invoice_id) {
@@ -138,41 +135,20 @@ export default function VendorNew() {
     setError(null)
 
     try {
-      const now = new Date().toISOString()
-      const vendorId = vendorIdFor(legalName)
-
-      await createVendor({
-        id: vendorId,
-        legal_name: legalName.trim(),
-        status: 'active',
-        aliases: alsoKnownAs
-          .split(',')
-          .map((alias) => alias.trim())
-          .filter((alias) => alias.length > 0 && alias !== legalName.trim()),
-        bank_account: bankAccount.trim(),
-        bank_ifsc: ifsc.trim(),
-        bank_confirmed_by: confirmedBy.trim(),
-        // Dated, so the confirmation can be aged. A note with no date cannot say
-        // whether the check happened this week or three years ago.
-        bank_confirmed_at: now,
-        gstin: gstin.trim() || null,
-        address: address.trim() || null,
-        email_domain: emailDomain.trim() || null,
-        added_by: addedBy.trim(),
+      // The row and the first entry in its history, written the same way the
+      // standalone form writes them, so the two flows cannot drift on what a new
+      // vendor record contains.
+      await createVendorWithTrail({
+        legalName,
+        gstin,
+        address,
+        emailDomain,
+        alsoKnownAs,
+        bankAccount,
+        ifsc,
+        confirmedBy,
+        addedBy,
       })
-
-      // The first entry in this vendor's history, so the account it was created
-      // with is on the trail rather than only in the row it will later be edited
-      // out of. Best effort: the vendor exists either way, and a missing history
-      // table must not strand a person on a held invoice.
-      await recordVendorCreated({
-        vendorId,
-        account: bankAccount.trim(),
-        ifsc: ifsc.trim(),
-        addedBy: addedBy.trim(),
-        verificationNote: confirmedBy.trim(),
-        at: now,
-      }).catch(() => undefined)
 
       setSubmitting('Checking the invoice again')
       let newRunId: string | null = null
@@ -209,7 +185,7 @@ export default function VendorNew() {
       <PageBody>
         <div className="space-y-6">
         <Link
-          to={fromRunId ? `/decisions/${fromRunId}` : '/'}
+          to={`/decisions/${fromRunId}`}
           className="inline-flex items-center gap-2 text-sm text-muted transition-colors hover:text-ink"
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
@@ -316,8 +292,7 @@ export default function VendorNew() {
 
                 <div className={cn('space-y-4 px-5 py-5', blockClasses.panel, 'rounded-b-lg border-0')}>
                   <p className={cn('prose-serif max-w-[72ch] text-[15px]', blockClasses.text)}>
-                    Confirm these with the vendor on a phone number you already have. If we copied them off the invoice,
-                    the invoice would be checking itself and the fraud control would stop working.
+                    {PAYMENT_CONFIRMATION_NOTE}
                   </p>
 
                   <div className="grid gap-4 sm:grid-cols-2">
