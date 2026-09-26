@@ -14,6 +14,7 @@
 
 import {
   ACCEPTED_DOCUMENT_TYPES,
+  base64ByteLength,
   EXTRACTION_PROMPT,
   headFromBase64,
   isAcceptedDocumentType,
@@ -141,7 +142,7 @@ Deno.serve(async (req: Request) => {
     // The document's kind and size sit beside every attempt, so a provider error
     // about a request can be read against what the request actually carried. A
     // model's 400 says nothing about the document; this line does.
-    logContext: `invoice_number=${invoiceNumber} document=${mimeType} bytes=${Math.round((request.pdf_base64.length * 3) / 4)}`,
+    logContext: `invoice_number=${invoiceNumber} document=${mimeType} bytes=${base64ByteLength(request.pdf_base64)}`,
     build: (entry) => {
       const provider = buildProvider(entry, geminiKey, anthropicKey)
       return provider ? () => provider.extract(request.pdf_base64, EXTRACTION_PROMPT, mimeType) : null

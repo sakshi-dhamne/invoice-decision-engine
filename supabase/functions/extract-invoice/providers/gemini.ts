@@ -1,7 +1,9 @@
 import {
+  base64ByteLength,
   GEMINI_RESPONSE_SCHEMA,
   parseExtractionResponseText,
 } from '../../../../src/lib/extractionSchema.ts'
+import { logDebug, payloadPrefix } from '../../_shared/debug.ts'
 import { ProviderError, type ExtractionProvider, type TextCompletion, type TextProvider } from './types.ts'
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -55,6 +57,12 @@ export function createGeminiProvider(model: string, apiKey: string): ExtractionP
           thinkingConfig: NO_THINKING,
         },
       }
+
+      // What is about to go over the wire, when the flag is set. Off by default;
+      // see ../../_shared/debug.ts for what the prefix is good for.
+      logDebug(
+        `extract-invoice gemini-request model=${model} mime_type=${mimeType} bytes=${base64ByteLength(documentBase64)} base64_head=${payloadPrefix(documentBase64)}`,
+      )
 
       const response = await fetch(url, {
         method: 'POST',

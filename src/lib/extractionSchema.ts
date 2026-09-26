@@ -149,6 +149,20 @@ export function headFromBase64(base64: string, bytes: number = DOCUMENT_HEAD_BYT
 }
 
 /**
+ * How many bytes a base64 payload decodes to.
+ *
+ * Four characters carry three bytes, less whatever the padding stands in for.
+ * Only ever used in a log line, but a log line that a person is reading against a
+ * provider's complaint about size should not be approximate.
+ */
+export function base64ByteLength(base64: string): number {
+  const body = base64.replace(/[\r\n\s]/g, '')
+  if (body.length === 0) return 0
+  const padding = body.endsWith('==') ? 2 : body.endsWith('=') ? 1 : 0
+  return Math.max(0, Math.floor((body.length * 3) / 4) - padding)
+}
+
+/**
  * Bytes that are plainly not a document, whatever anything says they are.
  *
  * A server with no document to serve sends a page or an error body, and both are
