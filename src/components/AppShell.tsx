@@ -122,13 +122,16 @@ export function AppShell({
               <kbd className="identifier rounded border border-line px-1 py-0.5 text-xs">Ctrl K</kbd>
             </button>
 
+            {/* The label names the theme the click switches to. One word is too little on
+                its own, so the aria-label spells out the whole action. */}
             <button
               type="button"
               onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted transition-colors hover:text-ink"
             >
               {theme === 'dark' ? <Sun className="size-4" aria-hidden="true" /> : <Moon className="size-4" aria-hidden="true" />}
-              {theme === 'dark' ? 'Light colours' : 'Dark colours'}
+              {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
 
             <Button type="button" onClick={openUpload} className="w-full gap-2">
@@ -143,6 +146,7 @@ export function AppShell({
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
+        theme={theme}
         onToggleTheme={toggleTheme}
         onUpload={openUpload}
       />
