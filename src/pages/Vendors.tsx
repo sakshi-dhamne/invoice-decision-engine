@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 
 import { AppShell } from '@/components/AppShell.tsx'
 import { EmptyState, ErrorNote, Loading, PageBody, Panel, PanelHeading } from '@/components/Primitives.tsx'
@@ -25,6 +25,7 @@ import {
   BANK_CONFIRMED_LABEL,
   BANK_CONFIRMED_MISSING,
   IDENTITY_CHANGE_LABEL,
+  NEW_VENDOR_LABEL,
   PAYMENT_CHANGE_LABEL,
   VENDOR_HISTORY_EMPTY,
   vendorAddedBy,
@@ -163,6 +164,17 @@ export default function Vendors() {
                 placeholder="Search vendors"
                 className="h-9 w-56 rounded-md border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted"
               />
+
+              {/* Adding a vendor without an invoice to react to. The same address as
+                  the invoice-driven flow, which is the same act with a document in
+                  front of you; /vendors/new decides which of the two it is by
+                  whether it was given a run to work from. */}
+              <Button asChild className="gap-2">
+                <Link to="/vendors/new">
+                  <Plus className="size-4" aria-hidden="true" />
+                  {NEW_VENDOR_LABEL}
+                </Link>
+              </Button>
             </div>
           </div>
 

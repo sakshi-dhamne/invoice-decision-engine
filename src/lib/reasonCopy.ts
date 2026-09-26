@@ -412,6 +412,40 @@ export const NEW_ORDER_NUMBER_NOTE = 'The next number after this vendor\'s exist
 export const NEW_ORDER_SUBMIT = 'Raise the order'
 export const NEW_ORDER_INCOMPLETE = 'Choose a vendor and fill in the order number, description, value and date.'
 
+/**
+ * Adding a vendor with no invoice in front of you.
+ *
+ * The counterpart to the flow opened from a held invoice. That one reacts to a
+ * document from a company we cannot match; this is the ordinary way round, where
+ * the vendor is on the list before its first invoice arrives.
+ *
+ * The payment warning is the one thing that does not change between them. On the
+ * invoice-driven screen it says "do not copy these off the invoice"; here there is
+ * no invoice to copy from, and the reason the fields are confirmed out of band is
+ * the same either way: the account on file is what every future invoice is checked
+ * against, so it cannot come from anything the vendor sent us.
+ */
+export const NEW_VENDOR_LABEL = 'Add vendor'
+export const NEW_VENDOR_TITLE = 'Add a vendor'
+export const NEW_VENDOR_INTRO =
+  'Put a company on the approved vendor list before its first invoice arrives. Invoices from it are checked against what you enter here.'
+export const NEW_VENDOR_SUBMIT = 'Add the vendor'
+export const NEW_VENDOR_INCOMPLETE =
+  'Fill in the registered name, your name and all three payment fields to continue.'
+
+/**
+ * Why the three payment fields are typed rather than read.
+ *
+ * One sentence, shared by both screens that add a vendor, because the rule is the
+ * same on both and a control explained two slightly different ways is a control
+ * somebody will argue with. The second clause is the reason the field is never
+ * prefilled anywhere, not a claim that an invoice is on screen: the account on file
+ * is what every future invoice from this vendor is checked against, so it cannot
+ * come from anything the vendor sent us.
+ */
+export const PAYMENT_CONFIRMATION_NOTE =
+  'Confirm these with the vendor on a phone number you already have. If we copied them off the invoice, the invoice would be checking itself and the fraud control would stop working.'
+
 // ---------------------------------------------------------------------------
 // Vendors
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { REASON_SENTENCE, VERDICT_LABEL } from '../src/lib/reasonCopy.ts'
+import { PAYMENT_CONFIRMATION_NOTE, REASON_SENTENCE, VERDICT_LABEL } from '../src/lib/reasonCopy.ts'
 import { INTERNAL_KEYS } from '../src/lib/format.ts'
 import { FAILED_RUN_LABEL, FAILED_RUN_SENTENCE } from '../src/lib/reasonCopy.ts'
 import { rowForShortId } from '../src/lib/feed.ts'
@@ -333,6 +333,54 @@ describe('purchase orders have a screen', () => {
 })
 
 // ---------------------------------------------------------------------------
+// A vendor can be added without an invoice to react to
+// ---------------------------------------------------------------------------
+
+// The two flows are the same act, with and without a document in front of you, and
+// the one without used to answer with an error telling the reader to go and find a
+// held invoice first. Mirrors the order flow, which had the identical problem.
+describe('vendors can be added before any invoice arrives', () => {
+  const vendors = readFileSync(join(repoRoot, 'src/pages/Vendors.tsx'), 'utf8')
+  const page = readFileSync(join(repoRoot, 'src/pages/VendorNew.tsx'), 'utf8')
+
+  it('can be reached from the vendor list, with no invoice in the link', () => {
+    expect(vendors).toContain('to="/vendors/new"')
+    expect(vendors).toContain('{NEW_VENDOR_LABEL}')
+    // A run id in that link would make this the invoice-driven flow instead.
+    expect(vendors).not.toMatch(/to="\/vendors\/new\?from=/)
+  })
+
+  it('sends the same address to the standalone form when no invoice is in scope', () => {
+    expect(page).toContain('if (!fromRunId) return <VendorCreate />')
+  })
+
+  it('no longer refuses to open without a held invoice', () => {
+    expect(page).not.toContain('This page needs to be opened from a held invoice')
+  })
+
+  it('keeps the identity prefill on the invoice-driven flow only', () => {
+    expect(page).toContain('identityPrefill(read, doc?.vendor_name_as_printed ?? null)')
+    const standalone = readFileSync(join(repoRoot, 'src/pages/VendorCreate.tsx'), 'utf8')
+    // Nothing to prefill from, so nothing that could.
+    expect(standalone).not.toContain('identityPrefill')
+    expect(standalone).not.toContain('getStageLogs')
+  })
+
+  it('goes to the vendor list once the vendor exists', () => {
+    const standalone = readFileSync(join(repoRoot, 'src/pages/VendorCreate.tsx'), 'utf8')
+    expect(standalone).toContain("navigate('/vendors')")
+  })
+
+  it('writes the row through the same module on both flows', () => {
+    // So the two cannot drift on what a new vendor record contains.
+    const standalone = readFileSync(join(repoRoot, 'src/pages/VendorCreate.tsx'), 'utf8')
+    for (const source of [page, standalone]) {
+      expect(source).toContain('createVendorWithTrail({')
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Nothing looks like a control unless it is one
 // ---------------------------------------------------------------------------
 
@@ -446,9 +494,21 @@ describe('how it ran reads as English', () => {
 // would point the bank-detail check at the document it is meant to be checking,
 // and every future invoice from the vendor would then agree with itself.
 describe('vendor onboarding keeps payment details off the invoice', () => {
-  const source = readFileSync(join(repoRoot, 'src/pages/VendorNew.tsx'), 'utf8')
+  // Both screens that add a vendor, held to the same rule. One is opened from a
+  // held invoice and prefills identity from the document; the other is opened from
+  // the vendor list with no document at all. The payment half is identical on both,
+  // and asserting it on only one of them would leave the other free to drift.
+  const FORMS = {
+    'VendorNew.tsx': readFileSync(join(repoRoot, 'src/pages/VendorNew.tsx'), 'utf8'),
+    'VendorCreate.tsx': readFileSync(join(repoRoot, 'src/pages/VendorCreate.tsx'), 'utf8'),
+  }
+  const eachForm = Object.entries(FORMS)
 
-  it.each(['setBankAccount', 'setIfsc', 'setConfirmedBy'])('%s is only ever wired to its own input', (setter) => {
+  it.each(
+    eachForm.flatMap(([file, source]) =>
+      ['setBankAccount', 'setIfsc', 'setConfirmedBy'].map((setter) => [file, setter, source] as const),
+    ),
+  )('%s: %s is only ever wired to its own input', (_file, setter, source) => {
     // Passed straight to the field's own onValueChange and called nowhere else.
     // Any other call site is a prefill.
     expect(source).toContain(`onValueChange={${setter}}`)
@@ -456,34 +516,52 @@ describe('vendor onboarding keeps payment details off the invoice', () => {
     expect(calls, `${setter} is called directly at ${calls.length} place(s)`).toEqual([])
   })
 
-  it.each(['bank-account', 'ifsc', 'confirmed-by'])('%s is a field the browser cannot fill in', (id) => {
+  it.each(
+    eachForm.flatMap(([file, source]) =>
+      ['bank-account', 'ifsc', 'confirmed-by'].map((id) => [file, id, source] as const),
+    ),
+  )('%s: %s is a field the browser cannot fill in', (_file, id, source) => {
     // Autofill and session restore write into the DOM node behind React's back.
     // UnfilledInput is what corrects that; a plain input here would not.
     expect(source).toMatch(new RegExp(`<UnfilledInput\\s+id="${id}"`))
   })
 
-  it('seeds all three from the module that has no document to read', () => {
+  it.each(eachForm)('%s seeds all three from the module that has no document to read', (_file, source) => {
     expect(source).toContain("useState(emptyPaymentFields().bankAccount)")
     expect(source).toContain("useState(emptyPaymentFields().ifsc)")
     expect(source).toContain("useState(emptyPaymentFields().confirmedBy)")
   })
 
-  it('gates the form on paymentFieldsComplete', () => {
+  it.each(eachForm)('%s gates the form on paymentFieldsComplete', (_file, source) => {
     expect(source).toContain('paymentFieldsComplete({ bankAccount, ifsc, confirmedBy })')
     expect(source).toContain('disabled={!ready || submitting !== null}')
   })
 
   it('keeps the sentence that says why, in the interface rather than in a comment', () => {
-    expect(source).toContain(
-      'Confirm these with the vendor on a phone number you already have. If we copied them off the invoice,',
+    // It lives in reasonCopy.ts so the two screens cannot explain one control two
+    // different ways, and each of them renders it.
+    expect(PAYMENT_CONFIRMATION_NOTE).toBe(
+      'Confirm these with the vendor on a phone number you already have. If we copied them off the invoice, the invoice would be checking itself and the fraud control would stop working.',
     )
+    for (const [file, source] of eachForm) {
+      expect(source, file).toContain('{PAYMENT_CONFIRMATION_NOTE}')
+    }
   })
 
+  // Only the invoice-driven form. The standalone one has no document to read an
+  // account off, which is why it shows none.
   it('shows the printed account and IFSC for comparison without letting either reach a field', () => {
+    const source = FORMS['VendorNew.tsx']
     expect(source).toContain('printedBankAccount')
     expect(source).toContain('printedIfsc')
     // Displayed, never handed to a setter.
     expect(source).not.toMatch(/setBankAccount\(\s*printedBankAccount/)
     expect(source).not.toMatch(/setIfsc\(\s*printedIfsc/)
+  })
+
+  it('has nothing printed to show on the standalone form', () => {
+    const source = FORMS['VendorCreate.tsx']
+    expect(source).not.toContain('printedBankAccount')
+    expect(source).not.toContain('printedIfsc')
   })
 })
