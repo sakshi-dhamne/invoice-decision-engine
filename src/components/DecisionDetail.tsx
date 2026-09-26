@@ -449,7 +449,11 @@ export function DecisionDetail({
                       duplicateOf.invoiceNumber,
                       shortDate(duplicateOf.decidedAt ?? data.run.started_at),
                     )
-                  : (data.run.explanation ?? 'No explanation was recorded for this run.')}
+                  : // On a failed run this is the sentence the run recorded about
+                    // why it stopped, which for an extraction is the edge function's
+                    // own account of what it tried. The panel above says that it
+                    // failed; this says what went wrong.
+                    (data.run.explanation ?? 'No explanation was recorded for this run.')}
               </p>
 
               {duplicateOf?.runId ? (

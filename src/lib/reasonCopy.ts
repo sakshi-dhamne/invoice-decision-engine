@@ -79,6 +79,81 @@ export const FAILED_RUN_LABEL = 'Failed'
 export const FAILED_RUN_SENTENCE = 'The file could not be read.'
 
 // ---------------------------------------------------------------------------
+// When a service does not answer
+// ---------------------------------------------------------------------------
+
+/**
+ * The two things to say when an edge function gives us nothing to repeat.
+ *
+ * Both functions answer a failure with a sentence written for a person, and that
+ * sentence is what gets shown. These are only for the cases where there is no
+ * sentence to show: the service was never reached, or it answered with a body
+ * holding nothing readable. Neither names the function, because what this software
+ * calls a service is not a fact about the invoice.
+ */
+export const SERVICE_UNREACHABLE =
+  'We could not reach the service that reads documents. Check the connection, then try again.'
+
+export const SERVICE_GAVE_NO_ANSWER =
+  'The service that reads documents did not answer. Try again in a moment.'
+
+/**
+ * What each stage was doing, as a clause that can follow "while".
+ *
+ * STAGE_LABEL is imperative, which is right above a stage in the live view and
+ * wrong inside a sentence: "Read the document did not finish" is what reading one
+ * out as a noun produced.
+ */
+const STAGE_FAILURE_CLAUSE: Readonly<Record<string, string>> = {
+  ingest: 'receiving the document',
+  extract: 'reading the document',
+  resolve_vendor: 'identifying the vendor',
+  match_po: 'finding the order',
+  validate: 'running the checks',
+  decide: 'deciding',
+  explain: 'writing the explanation',
+}
+
+/**
+ * Why a run failed, in one sentence: where it stopped, then what went wrong.
+ *
+ * The detail is the message the failing step produced, which for an extraction is
+ * the edge function's own account of what it tried. That is the sentence somebody
+ * needs, and it used to be recorded as `Stage "extract" threw: ...` and then never
+ * shown anyway.
+ */
+export function stageFailedSentence(stage: string, detail: string): string {
+  const clause = STAGE_FAILURE_CLAUSE[stage] ?? 'working on it'
+  const trimmed = detail.trim()
+  const ending = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
+  return trimmed.length > 0 ? `This stopped while ${clause}. ${ending}` : `This stopped while ${clause}.`
+}
+
+/**
+ * The legacy shape, rewritten rather than shown as it is.
+ *
+ * Runs that failed before this was recorded as English carry
+ * `Stage "extract" threw: <message>`. That names a stage by its function name and
+ * says "threw" at a finance manager, so it is translated on the way out rather than
+ * left to leak. Deployed data outlives the format that wrote it.
+ */
+const LEGACY_FAILURE = /^Stage "([a-z_]+)" threw:\s*([\s\S]*)$/
+
+/**
+ * The sentence to show for a failed run, from whatever its record holds.
+ *
+ * Null when the record holds nothing worth showing, which is the caller's cue to
+ * fall back to FAILED_RUN_SENTENCE.
+ */
+export function runFailureSentence(explanation: string | null | undefined): string | null {
+  const text = explanation?.trim() ?? ''
+  if (text.length === 0) return null
+  const legacy = LEGACY_FAILURE.exec(text)
+  if (legacy) return stageFailedSentence(legacy[1], legacy[2])
+  return text
+}
+
+// ---------------------------------------------------------------------------
 // Approved by a person
 // ---------------------------------------------------------------------------
 

@@ -37,6 +37,7 @@ import {
   duplicateOfSentence,
   FAILED_RUN_SENTENCE,
   reasonSentence,
+  runFailureSentence,
   VERDICT_LABEL,
   verdictTone,
 } from '@/lib/reasonCopy.ts'
@@ -68,6 +69,25 @@ const FILTERS: { value: InvoiceFilter; label: string }[] = [
   // way to audit human approvals was to open each invoice and look.
   { value: 'overridden', label: APPROVED_BY_PERSON_LABEL },
 ]
+
+/**
+ * The line under an invoice number in the list.
+ *
+ * A failed run says why it failed, from the sentence the run recorded, which for an
+ * extraction is the edge function's own account of what it tried. It used to read
+ * "The file could not be read." whatever had actually happened, which told a person
+ * nothing they could act on. The cell truncates, so the same text is the tooltip.
+ */
+function rowNote(row: FeedRow): string {
+  if (hasFailed(row.run)) return runFailureSentence(row.run.explanation) ?? FAILED_RUN_SENTENCE
+  if (row.duplicateOf) {
+    return duplicateOfSentence(
+      row.duplicateOf.invoiceNumber,
+      shortDate(row.duplicateOf.decidedAt ?? row.run.started_at),
+    )
+  }
+  return row.primaryCode ? reasonSentence(row.primaryCode) : FAILED_RUN_SENTENCE
+}
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null
@@ -382,17 +402,8 @@ export default function Dashboard() {
                             <span className="identifier block text-sm text-ink">
                               {row.invoice?.invoice_number ?? 'Not read yet'}
                             </span>
-                            <span className="mt-0.5 block truncate text-sm text-muted">
-                              {hasFailed(row.run)
-                                ? FAILED_RUN_SENTENCE
-                                : row.duplicateOf
-                                  ? duplicateOfSentence(
-                                      row.duplicateOf.invoiceNumber,
-                                      shortDate(row.duplicateOf.decidedAt ?? row.run.started_at),
-                                    )
-                                  : row.primaryCode
-                                    ? reasonSentence(row.primaryCode)
-                                    : FAILED_RUN_SENTENCE}
+                            <span className="mt-0.5 block truncate text-sm text-muted" title={rowNote(row)}>
+                              {rowNote(row)}
                             </span>
                           </span>
                           <span className="truncate text-sm text-ink-soft">{vendorNameFor(row)}</span>

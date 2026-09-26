@@ -10,6 +10,7 @@
 // duration. A stage that throws is marked `failed`, the run is marked `failed` with
 // the stage named, and nothing is left stuck in `running`.
 
+import { invokeEdgeFunction } from './edgeFunction.ts'
 import { documentFromBytes, getOrExtract } from './extraction.ts'
 import type { FetchedDocument } from './extraction.ts'
 import { describeUploadedInvoice, UPLOAD_BUCKET } from './uploads.ts'
@@ -53,7 +54,7 @@ import type {
 } from '@/rules/types.ts'
 import { fallbackExplanation } from '@/rules/explain.ts'
 import { modelLabel } from './format.ts'
-import { checksThatObjected, objectionSentence, reasonSentence } from './reasonCopy.ts'
+import { checksThatObjected, objectionSentence, reasonSentence, stageFailedSentence } from './reasonCopy.ts'
 import { isApproved, latestRunPerInvoice } from './runState.ts'
 import type { ExplainDecisionRequest, ExplainDecisionResponse } from '@/rules/explain.ts'
 
@@ -589,11 +590,11 @@ async function explainRun(input: {
         }
 
         try {
-          const { data, error } = await supabase.functions.invoke<ExplainDecisionResponse>('explain-decision', {
-            body: input.request,
-          })
-          if (error) throw error
-          if (!data || !data.ok) throw new Error(data?.ok === false ? data.error : 'explain-decision returned no data')
+          // Through invokeEdgeFunction, so a chain that could not write the
+          // explanation says which providers it tried rather than reporting a bare
+          // non-2xx into the stage log.
+          const data = await invokeEdgeFunction<ExplainDecisionResponse>('explain-decision', input.request)
+          if (!data.ok) throw new Error(data.error)
 
           return {
             value: { explanation: data.explanation, source: 'model' },
@@ -960,9 +961,14 @@ export async function runInvoice(invoiceId: string, options: RunInvoiceOptions =
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     // Never leave a run stuck in `running`.
+    //
+    // The explanation is written as English because it is shown: the Invoices list
+    // and the decision pane both read it for a failed run. It used to be recorded
+    // as `Stage "extract" threw: <message>`, which named a stage by its function
+    // name and said "threw" at a finance manager, and was never displayed at all.
     await updateRun(run.id, {
       status: 'failed',
-      explanation: `Stage "${currentStage}" threw: ${message}`,
+      explanation: stageFailedSentence(currentStage, message),
       finished_at: new Date().toISOString(),
     }).catch(() => undefined)
     throw error

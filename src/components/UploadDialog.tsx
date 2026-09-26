@@ -264,10 +264,17 @@ export function UploadDialog({
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-ink">{item.file.name}</p>
+                  {/* A failure wraps rather than truncates. The sentence names
+                      which providers were tried and what each of them returned, and
+                      a single clipped line of that is no more use than the generic
+                      complaint it replaced. Everything else is short and stays on
+                      one line. */}
                   <p
                     className={cn(
-                      'truncate text-xs',
-                      item.state === 'failed' || item.state === 'rejected' ? blockClasses.text : 'text-muted',
+                      'text-xs',
+                      item.state === 'failed' || item.state === 'rejected'
+                        ? cn('whitespace-pre-line break-words', blockClasses.text)
+                        : 'truncate text-muted',
                     )}
                   >
                     {item.note ?? `${STATE_LABEL[item.state]}, ${fileSize(item.file.size)}`}

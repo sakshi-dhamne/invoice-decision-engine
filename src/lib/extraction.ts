@@ -1,4 +1,5 @@
 import { supabase } from './supabase.ts'
+import { invokeEdgeFunction } from './edgeFunction.ts'
 import {
   DOCUMENT_HEAD_BYTES,
   isAcceptedDocumentType,
@@ -119,12 +120,19 @@ async function extractInvoice(
 ): Promise<ExtractionOutcome> {
   const { base64, mimeType } = document ?? (await fetchDocument(documentUrl))
 
-  const { data, error } = await supabase.functions.invoke<ExtractInvoiceResponse>('extract-invoice', {
-    body: { pdf_base64: base64, mime_type: mimeType, invoice_number: invoiceNumber, provider },
+  // Through invokeEdgeFunction, which reads the function's own message off a non-2xx
+  // before throwing. Called directly, a failing extraction reported "Edge Function
+  // returned a non-2xx status code" and threw away the sentence naming which
+  // providers were tried and what each of them returned.
+  const data = await invokeEdgeFunction<ExtractInvoiceResponse>('extract-invoice', {
+    pdf_base64: base64,
+    mime_type: mimeType,
+    invoice_number: invoiceNumber,
+    provider,
   })
 
-  if (error) throw error
-  if (!data) throw new Error('extract-invoice returned no data')
+  // A failure normally arrives as a non-2xx and is thrown above. This covers the
+  // shape rather than the status, so an `ok: false` sent with a 200 still fails.
   if (!data.ok) throw new Error(data.error)
 
   return { data: data.data, model: data.model, provider: data.provider, duration_ms: data.duration_ms }
