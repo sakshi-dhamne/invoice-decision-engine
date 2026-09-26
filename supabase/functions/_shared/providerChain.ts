@@ -120,6 +120,18 @@ export interface RunChainOptions<T> {
 export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<ChainResult<T>> {
   const startedAt = performance.now()
   const attempts: Attempt[] = []
+  /**
+   * What the request carried, on every line about it.
+   *
+   * This was only on the lines that report the whole call — the success and the
+   * exhausted chain. A 4xx returns from inside the loop, so the two lines a failing
+   * extraction actually writes, attempt-failed and failed-fast, carried the model
+   * and the status and nothing about the document. That is the pair a person reads
+   * when a provider rejects a request, and it left them guessing at exactly the
+   * thing in question. The context now precedes every attempt and sits on both
+   * failure lines, so a rejection can always be read against what was sent.
+   */
+  const context = options.logContext ? ` ${options.logContext}` : ''
 
   for (const entry of options.chain) {
     const call = options.build(entry)
@@ -130,6 +142,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
 
     let rateLimitAttempt = 0
     for (;;) {
+      console.log(`${options.label} attempt provider=${entry.provider} model=${entry.model}${context}`)
       try {
         const value = await withTimeout(
           call(`${entry.provider}:${entry.model}`),
@@ -138,7 +151,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
         )
         const duration_ms = Math.round(performance.now() - startedAt)
         console.log(
-          `${options.label} ok provider=${entry.provider} model=${entry.model} ${options.logContext ?? ''} duration_ms=${duration_ms}`,
+          `${options.label} ok provider=${entry.provider} model=${entry.model}${context} duration_ms=${duration_ms}`,
         )
         return { ok: true, value, entry, duration_ms }
       } catch (err) {
@@ -147,7 +160,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
         const message = err instanceof Error ? err.message : String(err)
 
         console.log(
-          `${options.label} attempt-failed provider=${entry.provider} model=${entry.model} status=${status} message=${message}`,
+          `${options.label} attempt-failed provider=${entry.provider} model=${entry.model}${context} status=${status} message=${message}`,
         )
 
         if (status === 429) {
@@ -170,7 +183,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
           // advance.
           const duration_ms = Math.round(performance.now() - startedAt)
           console.log(
-            `${options.label} failed-fast provider=${entry.provider} model=${entry.model} status=${status} duration_ms=${duration_ms}`,
+            `${options.label} failed-fast provider=${entry.provider} model=${entry.model}${context} status=${status} duration_ms=${duration_ms}`,
           )
           return {
             ok: false,
@@ -194,7 +207,7 @@ export async function runProviderChain<T>(options: RunChainOptions<T>): Promise<
       : 'none, because the chain was empty or every entry was skipped for a missing API key'
 
   console.log(
-    `${options.label} exhausted ${options.logContext ?? ''} duration_ms=${duration_ms} attempts=[${attemptsSummary}]`,
+    `${options.label} exhausted${context} duration_ms=${duration_ms} attempts=[${attemptsSummary}]`,
   )
 
   return {
