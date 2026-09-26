@@ -69,6 +69,9 @@ function OrderForInvoice({ runId }: { runId: string }) {
   const [invoice, setInvoice] = useState<InvoiceRow | null>(null)
   const [vendor, setVendor] = useState<VendorRow | null>(null)
   const [description, setDescription] = useState('')
+  // The order number printed on the invoice. This is what the order gets created
+  // as, so stage 4's reference lookup can find it on the re-run.
+  const [citedReference, setCitedReference] = useState<string | null>(null)
   // The order value starts empty and there is nothing in scope here to fill it
   // from. See src/lib/orderForm.ts.
   const [inputs, setInputs] = useState<OrderInputs>(() => emptyOrderInputs(today()))
@@ -110,6 +113,11 @@ function OrderForInvoice({ runId }: { runId: string }) {
       setDescription(
         describeFromLines(Array.isArray(read?.line_items) ? (read.line_items as { description?: string }[]) : []),
       )
+      // The extraction first, then the invoice row, which is the same order of
+      // preference the vendor name above is resolved through.
+      setCitedReference(
+        (typeof read?.po_reference === 'string' ? read.po_reference.trim() : '') || doc?.po_reference || null,
+      )
       setLoaded(true)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'The held invoice could not be loaded.')
@@ -139,6 +147,7 @@ function OrderForInvoice({ runId }: { runId: string }) {
       const raised = await raiseOrder({
         vendor,
         invoiceId: run.invoice_id,
+        citedReference,
         description,
         currency: invoice?.currency ?? 'INR',
         inputs,
@@ -213,6 +222,24 @@ function OrderForInvoice({ runId }: { runId: string }) {
                         readOnly
                       />
                     </div>
+
+                    {citedReference ? (
+                      <div>
+                        <label htmlFor="order-cited-number" className={labelClass}>
+                          Order number
+                        </label>
+                        <input
+                          id="order-cited-number"
+                          className={cn(inputClass, 'identifier text-muted')}
+                          value={citedReference}
+                          readOnly
+                        />
+                        <p className="mt-1 text-xs text-muted">
+                          The number printed on the invoice. The order is raised under it, so this invoice matches it
+                          when we check again.
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div>
                       <label htmlFor="order-description" className={labelClass}>

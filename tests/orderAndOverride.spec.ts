@@ -143,6 +143,8 @@ describe('raising an order for an existing vendor', () => {
     const raised = await raiseOrder({
       vendor: sunrise,
       invoiceId: 'invoice-inv-5',
+      // This invoice cites no order, which is the case these were written for.
+      citedReference: null,
       description: 'Site works, second phase',
       currency: 'INR',
       inputs: filled,
@@ -161,10 +163,46 @@ describe('raising an order for an existing vendor', () => {
     expect(raised.order.po_number).toBe(order.po_number)
   })
 
+  /**
+   * The number the order is created under.
+   *
+   * Raising it under an invented number is why raising an order never cleared a
+   * NO_PO_MATCH hold: stage 4 resolves the printed reference against the vendor's
+   * orders and found nothing by that name. tests/remediation.spec.ts asserts the
+   * consequence end to end; this asserts the write.
+   */
+  it('creates the order under the number the invoice cites', async () => {
+    await raiseOrder({
+      vendor: sunrise,
+      invoiceId: 'invoice-inv-5',
+      citedReference: 'PO-2075',
+      description: 'Site works, second phase',
+      currency: 'INR',
+      inputs: filled,
+    })
+
+    expect(createdOrders[0].po_number).toBe('PO-2075')
+  })
+
+  it('invents a number only when the invoice cites none', async () => {
+    await raiseOrder({
+      vendor: sunrise,
+      invoiceId: 'invoice-inv-5',
+      citedReference: null,
+      description: 'Site works, second phase',
+      currency: 'INR',
+      inputs: filled,
+    })
+
+    expect(createdOrders[0].po_number).toMatch(/^PO-SUNRIS-[A-Z0-9]{4}$/)
+  })
+
   it('re-runs the invoice against it and returns the new run', async () => {
     const raised = await raiseOrder({
       vendor: sunrise,
       invoiceId: 'invoice-inv-5',
+      // This invoice cites no order, which is the case these were written for.
+      citedReference: null,
       description: 'Site works, second phase',
       currency: 'INR',
       inputs: filled,
@@ -178,6 +216,8 @@ describe('raising an order for an existing vendor', () => {
     await raiseOrder({
       vendor: sunrise,
       invoiceId: 'invoice-inv-5',
+      // This invoice cites no order, which is the case these were written for.
+      citedReference: null,
       description: 'Site works, second phase',
       currency: 'INR',
       inputs: filled,
@@ -193,6 +233,7 @@ describe('raising an order for an existing vendor', () => {
       raiseOrder({
         vendor: sunrise,
         invoiceId: 'invoice-inv-5',
+        citedReference: null,
         description: 'Site works',
         currency: 'INR',
         inputs: emptyOrderInputs('2026-09-23'),
