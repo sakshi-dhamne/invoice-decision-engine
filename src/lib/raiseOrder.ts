@@ -10,12 +10,20 @@
 
 import { createPurchaseOrder } from './queries.ts'
 import { runInvoice } from './pipeline.ts'
-import { orderNumberFor, parseOrderValue, type OrderInputs } from './orderForm.ts'
+import { orderNumberToRaise, parseOrderValue, type OrderInputs } from './orderForm.ts'
 import type { PurchaseOrderRow, VendorRow } from './database.types.ts'
 
 export interface RaiseOrderInput {
   vendor: VendorRow
   invoiceId: string
+  /**
+   * The order number printed on the invoice, when it cites one.
+   *
+   * Required rather than optional: an order raised under a number the invoice does
+   * not cite can never match it, and that failure is silent. A caller with nothing
+   * to pass says so by passing null.
+   */
+  citedReference: string | null
   description: string
   currency: string
   inputs: OrderInputs
@@ -34,7 +42,8 @@ export async function raiseOrder(input: RaiseOrderInput): Promise<RaisedOrder> {
   }
 
   const order = await createPurchaseOrder({
-    po_number: orderNumberFor(input.vendor.legal_name),
+    // The number the invoice cites, so stage 4's reference lookup can find it.
+    po_number: orderNumberToRaise(input.citedReference, input.vendor.legal_name),
     vendor_id: input.vendor.id,
     total_amount: value,
     currency: input.currency,

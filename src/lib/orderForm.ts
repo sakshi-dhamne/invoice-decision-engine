@@ -81,6 +81,35 @@ export function orderNumberFor(vendorName: string, random: () => number = Math.r
   return `PO-${stem || 'ORDER'}-${random().toString(36).slice(2, 6).toUpperCase()}`
 }
 
+/**
+ * The number to raise the order under.
+ *
+ * An invoice that cites an order is asking to be paid against *that* order, so that
+ * is the number the order has to be created with. Raising it under an invented
+ * number was the reason raising an order never cleared a NO_PO_MATCH hold: stage 4
+ * resolves the printed reference against the vendor's orders, found nothing called
+ * PO-2075 because the order had been created as PO-KAVERI-7B3C, and held the
+ * invoice again. No amount of re-running could have fixed it, because the order
+ * that existed was not the order the document cited.
+ *
+ * Kept as printed rather than normalised, minus surrounding whitespace. An order
+ * number is matched as a string and never interpreted, and stage 4 normalises both
+ * sides of that comparison, so storing what the document says keeps the record
+ * faithful without weakening the match.
+ *
+ * The generated number is still the right answer when the invoice cites nothing,
+ * which is the other way an invoice reaches NO_PO_MATCH: there is no reference to
+ * honour, so something legible is invented instead.
+ */
+export function orderNumberToRaise(
+  citedReference: string | null | undefined,
+  vendorName: string,
+  random: () => number = Math.random,
+): string {
+  const cited = (citedReference ?? '').trim()
+  return cited.length > 0 ? cited : orderNumberFor(vendorName, random)
+}
+
 /** A number the form will accept as an order value: present, numeric and above zero. */
 export function parseOrderValue(typed: string): number | null {
   const cleaned = typed.replace(/[,\s]/g, '')
