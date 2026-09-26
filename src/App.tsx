@@ -6,6 +6,7 @@ import Dashboard from '@/pages/Dashboard'
 import Decision from '@/pages/Decision'
 import Exceptions from '@/pages/Exceptions'
 import ExtractionHarness from '@/pages/ExtractionHarness'
+import Maintenance from '@/pages/Maintenance'
 import NotFound from '@/pages/NotFound'
 import OrderDetail from '@/pages/OrderDetail'
 import OrderNew from '@/pages/OrderNew'
@@ -40,6 +41,11 @@ function App() {
             lands somewhere. */}
         <Route path="/rules" element={<Rules />} />
         <Route path="/dashboard" element={<Dashboard />} />
+
+        {/* Deliberately absent from the sidebar and the command palette. Somebody
+            clearing a demo database out goes here on purpose; nobody should arrive
+            by clicking around. */}
+        <Route path="/maintenance" element={<Maintenance />} />
 
         {/* The development harness, unchanged. It is not part of the product and
             carries none of its chrome. */}
